@@ -1,0 +1,39 @@
+name: Release
+
+# Only a pushed version tag triggers this -- not every push to main, which
+# would turn every small commit into a public release. Cut one by bumping
+# Cargo.toml's [workspace.package] version, committing, then:
+#   git tag v<version> && git push origin v<version>
+# The tag's <version> should match Cargo.toml's, since neither is checked
+# against the other here.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  release:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "Battery Log ${{ github.ref_name }}"
+          releaseBody: "See the commit history for what changed in this version."
+          # Draft, not published immediately -- gives a chance to check the
+          # attached installers and edit the notes before anyone sees it.
+          releaseDraft: true
+          prerelease: false

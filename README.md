@@ -230,6 +230,13 @@ of the normal edit/test loop (a full release build plus both bundlers takes
 several minutes), so reach for `cargo build -p battery-log`/`--release` day
 to day and only run this when you actually want an installer.
 
+**Releases build automatically**, via `.github/workflows/release.yml`, but
+only from a pushed version tag — not every push to `main`. To cut one: bump
+`Cargo.toml`'s version, commit, then `git tag v<version> && git push origin
+v<version>`. That builds both installers on GitHub's Windows runners and
+attaches them to a draft GitHub Release, left as a draft so the installers
+and release notes can be checked before it's published.
+
 ## Where your data is
 
 `%APPDATA%\com.batteries.log\batteries.db` (plus its `-wal`/`-shm` SQLite
