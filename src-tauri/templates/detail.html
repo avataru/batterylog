@@ -1,0 +1,381 @@
+{% extends "base.html" %}
+{% import "macros.html" as macros %}
+{% block content %}
+  {% if battery.deleted_at %}
+    <p class="flash err">This battery was deleted on {{ battery.deleted_at | date10 }}.
+       Its id is kept so the printed label never comes to mean a different cell.
+       Restore it under Maintenance to put that label back into service, or
+       {% if can_purge %}delete it permanently since it was never used{% else %}clear the record if the sticker is going onto a different cell{% endif %}.</p>
+  {% endif %}
+
+  <div class="row" style="align-items:flex-start;justify-content:space-between">
+    <div>
+      <h1>Battery {{ battery.id | pad3 }}</h1>
+      <p class="sub">
+        {{ battery.type }}
+        {% if battery.nominal_mah %}&middot; {{ battery.nominal_mah }} mAh nominal{% endif %}
+        {% if battery.brand %}&middot; {{ battery.brand }}{% endif %}
+      </p>
+    </div>
+    <div class="prev-next">
+      {% if adjacent.prev %}
+        <a class="btn secondary" href="/b/{{ adjacent.prev }}"
+           title="Battery {{ adjacent.prev | pad3 }}"
+           aria-label="Previous battery, {{ adjacent.prev | pad3 }}">&larr; Prev</a>
+      {% else %}
+        <span class="btn secondary disabled" aria-hidden="true">&larr; Prev</span>
+      {% endif %}
+      {% if adjacent.next %}
+        <a class="btn secondary" href="/b/{{ adjacent.next }}"
+           title="Battery {{ adjacent.next | pad3 }}"
+           aria-label="Next battery, {{ adjacent.next | pad3 }}">Next &rarr;</a>
+      {% else %}
+        <span class="btn secondary disabled" aria-hidden="true">Next &rarr;</span>
+      {% endif %}
+    </div>
+  </div>
+  {% if not battery.deleted_at %}
+    <p class="where">Currently at
+      <strong>{{ battery.location | default(value="nowhere recorded") }}</strong></p>
+  {% endif %}
+
+  <div class="pills">
+    <a class="pill {% if tab != "maintenance" %}on{% endif %}"
+       href="/b/{{ battery.id }}">Overview</a>
+    <a class="pill {% if tab == "maintenance" %}on{% endif %}"
+       href="/b/{{ battery.id }}?tab=maintenance">Maintenance</a>
+  </div>
+
+{% if tab != "maintenance" %}
+
+  <div class="actions">
+    <a class="btn" href="/b/{{ battery.id }}?dialog=measure" data-dialog="measure">
+      Add a reading</a>
+    {% if not battery.deleted_at %}
+      <a class="btn secondary" href="/b/{{ battery.id }}?dialog=location"
+         data-dialog="location">Change location</a>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">Condition</h3>
+
+    <div class="figures">
+      <div>
+        <p class="figure-label">Health</p>
+        {% if condition.has_retention %}
+          <p class="figure {% if condition.health_low %}over{% endif %}">
+            {% if condition.health_low %}{{ macros::alert() }}{% endif %}
+            {{ condition.retention }}%</p>
+        {% else %}
+          <p class="figure muted">&mdash;</p>
+        {% endif %}
+      </div>
+      <div>
+        <p class="figure-label">Last measured</p>
+        {% if condition.latest %}
+          <p class="figure">{{ condition.latest.capacity_mah }}<span class="unit"> mAh</span></p>
+        {% else %}
+          <p class="figure muted">&mdash;</p>
+        {% endif %}
+      </div>
+      <div>
+        <p class="figure-label">Resistance</p>
+        {% if condition.ir_latest %}
+          <p class="figure {% if condition.ir_over_limit %}over{% endif %}">
+            {% if condition.ir_over_limit %}{{ macros::alert() }}{% endif %}
+            {{ condition.ir_latest.ir_mohm }}<span class="unit"> m&Omega;</span></p>
+        {% else %}
+          <p class="figure muted">&mdash;</p>
+        {% endif %}
+      </div>
+    </div>
+
+    {% if condition.unavailable %}
+      <p class="muted" style="font-size:.9rem">{{ condition.unavailable }}</p>
+    {% else %}
+      <p class="muted" style="font-size:.9rem">
+        {{ condition.latest.capacity_mah }} mAh measured on
+        {{ condition.latest.measured_at }} against
+        {{ battery.nominal_mah }} mAh nominal, using {{ condition.setup }}.
+        Health is capacity alone: resistance is reported beside it rather than
+        mixed into it, because the two measure different things and any single
+        number combining them would need a weighting nothing here could
+        justify.</p>
+    {% endif %}
+
+    {% if condition.health_low %}
+      <div class="flash warn">{{ macros::alert() }}
+        <div><strong>Capacity is down to {{ condition.retention }}% of
+          nominal</strong>, below the {{ condition.health_limit }}% this
+          application treats as the end of a cell's useful life. That figure is
+          a convention rather than a hard fact: a cell at this level is still
+          fine in a clock or a remote control and will disappoint in a camera
+          flash or anything with a motor. Retire it, or move it somewhere
+          undemanding and stop measuring it.</div></div>
+    {% endif %}
+
+    {% if condition.ir_over_limit %}
+      <div class="flash warn">{{ macros::alert() }}
+        <div><strong>Resistance is {{ condition.ir_latest.ir_mohm }} m&Omega;,
+          at or above the {{ condition.ir_limit }} m&Omega; limit set for
+          {{ battery.type }}.</strong> Resistance this high means the cell will
+          sag under load and cut out early in anything demanding, even when its
+          measured capacity still looks respectable, so it is better kept for a
+          clock or a remote than a flash or a motor. The reading came from
+          {{ condition.ir_latest_instrument_name }} on
+          {{ condition.ir_latest.measured_at }}; if that is not the instrument
+          the limit was set against, check the limit before trusting the
+          warning.</div></div>
+    {% endif %}
+
+    {% if condition.ir_unchecked %}
+      <p class="muted" style="font-size:.9rem">Resistance limits only cover the
+        popular AA and AAA NiMH cells, so this cell's resistance is recorded
+        but not checked against anything.</p>
+    {% endif %}
+
+    {% if condition.has_ir_change %}
+      <p class="muted" style="font-size:.9rem">Resistance is
+        {{ condition.ir_change_abs }} m&Omega;
+        {% if condition.ir_change > 0 %}higher{% else %}lower{% endif %} than the
+        {{ condition.ir_first.ir_mohm }} m&Omega; first recorded on
+        {{ condition.ir_first.measured_at }}. A cell whose resistance climbs
+        will sag under load long before its capacity looks alarming.</p>
+    {% endif %}
+
+    {% if condition.newer %}
+      <p class="muted" style="font-size:.9rem">A more recent reading exists,
+        taken on a different instrument or at a different discharge current.
+        Health above deliberately still comes from the longer series, because
+        one figure from a second machine is not a trend and cannot be compared
+        with the ones before it. Record another the usual way and this will
+        follow it.</p>
+    {% endif %}
+
+    {% if condition.chart %}
+      <svg class="chart" viewBox="0 0 {{ condition.chart.width }} {{ condition.chart.height }}"
+           role="img" preserveAspectRatio="none"
+           aria-label="Measured capacity and resistance over time">
+        {% if condition.chart.nominal_y %}
+          <line x1="0" y1="{{ condition.chart.nominal_y }}"
+                x2="{{ condition.chart.width }}" y2="{{ condition.chart.nominal_y }}"
+                class="chart-nominal"/>
+        {% endif %}
+        {% if condition.chart.cap_line %}
+          <polyline points="{{ condition.chart.cap_line }}" class="chart-line"/>
+        {% endif %}
+        {% if condition.chart.ir_line %}
+          <polyline points="{{ condition.chart.ir_line }}" class="chart-resistance"/>
+        {% endif %}
+        {% for p in condition.chart.series %}
+          {% if p.cap_y %}
+            <circle cx="{{ p.x }}" cy="{{ p.cap_y }}" r="4" class="chart-dot">
+              <title>{{ p.cap_label }} on {{ p.measured_at }}</title>
+            </circle>
+          {% endif %}
+        {% endfor %}
+        {% for p in condition.chart.series %}
+          {% if p.ir_y %}
+            <circle cx="{{ p.x }}" cy="{{ p.ir_y }}" r="4" class="chart-resistance-dot">
+              <title>{{ p.ir_label }} on {{ p.measured_at }}</title>
+            </circle>
+          {% endif %}
+        {% endfor %}
+      </svg>
+      <div class="chart-key">
+        <span>
+          {% if condition.chart.cap_low %}
+            <span style="color:#4c7dfd">Capacity: {{ condition.chart.cap_low }}&ndash;{{ condition.chart.cap_high }} mAh</span>
+          {% endif %}
+          {% if condition.chart.ir_low %}
+            <span style="color:#666"> &middot; </span>
+            <span style="color:#ff6b6b">Resistance: {{ condition.chart.ir_low }}&ndash;{{ condition.chart.ir_high }} mΩ</span>
+          {% endif %}
+          {% if condition.chart.nominal_y %} &middot; dashed line is {{ condition.chart.nominal }} mAh nominal{% endif %}
+        </span>
+        <span>{{ condition.chart.first }}
+          {% if condition.chart.last != condition.chart.first %}
+            &ndash; {{ condition.chart.last }}{% endif %}</span>
+      </div>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">Location history</h3>
+    {% if history %}
+      <table>
+        {% for move in history %}
+          <tr><td>{{ move.location }}</td>
+              <td class="muted">{{ move.moved_at | date10 }}</td></tr>
+        {% endfor %}
+      </table>
+    {% else %}
+      <p class="muted" style="margin:0">No moves recorded yet. Changing the
+         location, or scanning this label, adds the first entry.</p>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">Readings</h3>
+    {% if readings %}
+      <table class="readings">
+        <thead>
+          <tr><th>Date</th><th>Kind</th><th>Reading</th><th>Taken with</th><th></th></tr>
+        </thead>
+        <tbody>
+          {% for m in readings %}
+            <tr>
+              <td>{{ m.measured_at }}</td>
+              <td>{{ m.kind }}</td>
+              <td>
+                {% if m.capacity_mah %}{{ m.capacity_mah }} mAh{% endif %}
+                {% if m.ir_mohm %}{% if m.capacity_mah %}&middot; {% endif %}{{ m.ir_mohm }} m&Omega;{% endif %}
+                {% if not m.capacity_mah and not m.ir_mohm %}
+                  <span class="muted">no values</span>{% endif %}
+                {% if m.notes %}<br><span class="muted">{{ m.notes }}</span>{% endif %}
+              </td>
+              <td class="muted">
+                {% if m.instrument_id %}{{ m.instrument_name }}{% endif %}
+                {% if m.mode_id %}<br>{{ m.mode_name }}{% endif %}
+                {% if m.discharge_ma %}<br>{{ m.discharge_ma }} mA discharge{% endif %}
+                {% if m.charge_ma %}<br>{{ m.charge_ma }} mA charge{% endif %}
+                {% if not m.instrument_id %}&mdash;{% endif %}
+              </td>
+              <td class="row-actions">
+                {% if m.has_protocol %}
+                  <a class="icon-sm" href="/instruments#procedure-{{ m.mode_id }}"
+                     title="View the {{ m.mode_name }} procedure"
+                     aria-label="View the {{ m.mode_name }} procedure">
+                    {{ icon(name="info") | safe }}
+                  </a>
+                {% endif %}
+                <form method="post" action="/measurement/{{ m.id }}/delete"
+                      data-confirm="Delete this reading? It cannot be recovered.">
+                  <button type="submit" class="icon-sm danger"
+                          title="Delete this reading" aria-label="Delete this reading">{{ icon(name="delete") | safe }}</button>
+                </form>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="muted" style="margin:0">Nothing recorded yet.</p>
+    {% endif %}
+  </div>
+
+{% else %}
+
+  <div class="card">
+    <h3 style="margin-top:0">Details</h3>
+    <p class="muted" style="margin-top:0">What this cell is. Correcting the type
+       or the nominal capacity changes what health is measured against, so the
+       percentage on the overview will move with it.</p>
+    <form method="post" action="/b/{{ battery.id }}/edit">
+      <div class="row">
+        <div>
+          <label for="type">Type</label>
+          <input id="type" name="type" list="types" required
+                 value="{{ battery.type }}" autocomplete="off">
+          <datalist id="types">
+            {% for value in types %}<option value="{{ value }}">{% endfor %}
+          </datalist>
+        </div>
+        <div>
+          <label for="nominal">Nominal capacity (mAh)</label>
+          <input id="nominal" name="nominal_mah" inputmode="numeric"
+                 value="{{ battery.nominal_mah | default(value="") }}" autocomplete="off"
+                 placeholder="leave blank if unknown">
+        </div>
+      </div>
+      <label for="brand">Brand</label>
+      <input id="brand" name="brand" list="brands" autocomplete="off"
+             value="{{ battery.brand }}">
+      <datalist id="brands">
+        {% for value in brands %}<option value="{{ value }}">{% endfor %}
+      </datalist>
+      <label for="notes">Notes</label>
+      <textarea id="notes" name="notes" rows="2">{{ battery.notes }}</textarea>
+      <button type="submit" class="wide secondary">Save details</button>
+    </form>
+  </div>
+
+  {% if not battery.deleted_at %}
+    <div class="card">
+      <h3 style="margin-top:0">Label</h3>
+      <p class="muted" style="margin-top:0">The label carries only the id, so
+         editing anything above never makes it wrong. Print it again if one is
+         lost or will not scan.</p>
+      <div class="row">
+        <form method="post" action="/b/{{ battery.id }}/print">
+          <button type="submit" class="secondary" style="width:100%">Reprint label</button>
+        </form>
+        <button type="button" class="secondary" id="preview-label-btn"
+                data-battery-id="{{ battery.id }}" style="width:100%">Preview label</button>
+      </div>
+    </div>
+  {% endif %}
+
+  <div class="card">
+    <h3 style="margin-top:0">Retiring and reusing</h3>
+    {% set id_text = battery.id | pad3 %}
+    <p class="muted" style="margin-top:0">
+      {% if battery.deleted_at and can_purge %}
+        Restoring puts this id back into use with everything it already says
+        about the cell left intact. Nothing was ever recorded against it, so
+        it can also be removed for good, freeing the id to be reused.
+      {% elif battery.deleted_at %}
+        Restoring puts this id back into use with everything it already says
+        about the cell left intact. Clearing empties the record instead: the
+        capacity, brand, location, notes, the location history and every
+        reading are removed, the id and the type are kept, and the battery is
+        put back into use ready to describe whichever cell now carries this
+        sticker.
+      {% else %}
+        Deleting keeps the row and the id, so this label can be restored and
+        reused later. Clearing empties the record instead: the capacity,
+        brand, location, notes, the location history and every reading are
+        removed, the id and the type are kept, and the battery is put back
+        into use ready to describe whichever cell now carries this sticker.
+      {% endif %}
+    </p>
+    <div class="row">
+      {% if battery.deleted_at %}
+        <form method="post" action="/b/{{ battery.id }}/restore">
+          <button type="submit" style="width:100%">Restore battery</button>
+        </form>
+        {% if can_purge %}
+          <form method="post" action="/b/{{ battery.id }}/purge"
+                data-confirm="Permanently delete battery {{ id_text }}? It has no readings, so nothing is lost, but the id becomes free to reuse and this cannot be undone.">
+            <button type="submit" class="secondary danger" style="width:100%">Delete permanently</button>
+          </form>
+        {% else %}
+          <form method="post" action="/b/{{ battery.id }}/reset"
+                data-confirm="Clear battery {{ id_text }}? Its capacity, brand, location, notes, location history and every reading are removed and cannot be recovered. The id and the type are kept.">
+            <button type="submit" class="secondary danger" style="width:100%">Clear record</button>
+          </form>
+        {% endif %}
+      {% else %}
+        {% if will_hard_delete %}
+          {% set confirm_text = "Delete battery " ~ id_text ~ "? It has never been used (no readings) and is the highest id, so this removes it completely rather than marking it deleted, and the id becomes free to reuse. This cannot be undone." %}
+        {% else %}
+          {% set confirm_text = "Mark battery " ~ id_text ~ " as deleted? Nothing is removed and it can be restored." %}
+        {% endif %}
+        <form method="post" action="/b/{{ battery.id }}/delete" data-confirm="{{ confirm_text }}">
+          <button type="submit" class="secondary" style="width:100%">Delete battery</button>
+        </form>
+        <form method="post" action="/b/{{ battery.id }}/reset"
+              data-confirm="Clear battery {{ id_text }}? Its capacity, brand, location, notes, location history and every reading are removed and cannot be recovered. The id and the type are kept.">
+          <button type="submit" class="secondary danger" style="width:100%">Clear record</button>
+        </form>
+      {% endif %}
+    </div>
+  </div>
+
+{% endif %}
+
+  {% include "dialog_measure.html" %}
+  {% if not battery.deleted_at %}{% include "dialog_location.html" %}{% endif %}
+  {% include "dialog_label.html" %}
+{% endblock content %}

@@ -1,0 +1,52 @@
+{% macro chips(target, values, instrument_field="") %}
+  {% if values %}
+    <div class="chips" data-fills="{{ target }}">
+      {% for value in values %}
+        {% if instrument_field %}
+          <button type="button" class="chip" data-value="{{ value.mode }}"
+                  data-instruments='{{ value.instruments | json_encode }}'>{{ value.mode }}</button>
+        {% else %}
+          <button type="button" class="chip" data-value="{{ value }}">{{ value }}</button>
+        {% endif %}
+      {% endfor %}
+    </div>
+  {% endif %}
+{% endmacro chips %}
+
+{% macro battery_action(b, list_url) %}
+  {% if b.deleted_at %}
+    <form method="post" action="/b/{{ b.id }}/restore">
+      <input type="hidden" name="next" value="{{ list_url }}">
+      <button type="submit" class="icon-sm"
+              title="Restore battery {{ b.id | pad3 }}"
+              aria-label="Restore battery {{ b.id | pad3 }}">{{ icon(name="restore") | safe }}</button>
+    </form>
+  {% else %}
+    {% set id_text = b.id | pad3 %}
+    {% if b.will_hard_delete %}
+      {% set confirm_text = "Delete battery " ~ id_text ~ "? It has never been used (no readings) and is the highest id, so this removes it completely rather than marking it deleted, and the id becomes free to reuse. This cannot be undone." %}
+    {% else %}
+      {% set confirm_text = "Mark battery " ~ id_text ~ " as deleted? Its id stays out of circulation so the printed label can be restored later." %}
+    {% endif %}
+    <form method="post" action="/b/{{ b.id }}/delete" data-confirm="{{ confirm_text }}">
+      <input type="hidden" name="next" value="{{ list_url }}">
+      <button type="submit" class="icon-sm danger"
+              title="Delete battery {{ b.id | pad3 }}"
+              aria-label="Delete battery {{ b.id | pad3 }}">{{ icon(name="delete") | safe }}</button>
+    </form>
+  {% endif %}
+{% endmacro battery_action %}
+
+{% macro battery_health(b) %}
+  {% if b.has_health_pct or b.ir_over_limit %}
+    {% if b.ir_over_limit %}{% set bg = "hsl(30, 75%, 35%)" %}{% else %}{% set bg = b.health_color %}{% endif %}
+    <span class="health-pill" style="background:{{ bg }}" title="{{ b.health_title }}">
+      {% if b.has_health_pct %}{{ b.health_pct }}%{% else %}&mdash;{% endif %}
+      {% if b.ir_over_limit %}<span style="margin-left:.25rem">&#9888;</span>{% endif %}
+    </span>
+  {% else %}
+    <span class="muted">&mdash;</span>
+  {% endif %}
+{% endmacro battery_health %}
+
+{% macro alert() %}{{ icon(name="alert", cls="alert") | safe }}{% endmacro alert %}

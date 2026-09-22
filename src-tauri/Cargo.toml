@@ -1,0 +1,30 @@
+[package]
+name = "battery-log"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "battery_log_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+batteries-core = { path = "../core" }
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tauri-plugin-window-state = "2"
+serde.workspace = true
+serde_json.workspace = true
+tera = "1"
+pulldown-cmark = "0.12"
+url = "2"
+chrono.workspace = true
+
+[[bin]]
+name = "battery-log"
+path = "src/main.rs"
+
+[dev-dependencies]
+tempfile = "3"

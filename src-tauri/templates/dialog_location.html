@@ -1,0 +1,20 @@
+{% import "macros.html" as macros %}
+<dialog id="dlg-location" {% if open_dialog == "location" %}open{% endif %}>
+  <button type="button" class="dlg-close" aria-label="Close">&times;</button>
+  <h2>Change location</h2>
+  <p class="sub">Where this cell is kept, or what it is currently powering.
+     Saving adds a line to the history, so the record says when it moved as well
+     as where it went.</p>
+
+  <form method="post" action="/b/{{ battery.id }}/location">
+    <label for="location">Location</label>
+    <input id="location" name="location" list="locations" data-autofocus
+           value="{{ battery.location }}" autocomplete="off"
+           placeholder="e.g. Case A, or TV remote">
+    <datalist id="locations">
+      {% for value in locations %}<option value="{{ value }}">{% endfor %}
+    </datalist>
+    {{ macros::chips(target="#location", values=top_locations) }}
+    <button type="submit" class="wide">Save location</button>
+  </form>
+</dialog>

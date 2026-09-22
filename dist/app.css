@@ -1,0 +1,428 @@
+:root { color-scheme: dark; }
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { margin:0; font:16px/1.5 system-ui,-apple-system,sans-serif;
+       background:#12141a; color:#e6e8ee; }
+main { padding:1rem 1.5rem 4rem; }
+nav { display:flex; gap:.5rem; margin-bottom:1.2rem; flex-wrap:wrap; }
+nav a { flex:1; text-align:center; padding:.6rem 1rem; border-radius:.5rem;
+        background:#1b1e27; border:1px solid #2a2f3d; color:#e6e8ee;
+        text-decoration:none; font-weight:600; white-space:nowrap; }
+nav a.on { background:#4c7dfd; border-color:#4c7dfd; }
+h1 { font-size:1.5rem; margin:.2rem 0 .3rem; }
+.sub { color:#9aa2b4; margin:0 0 1.2rem; }
+.card { background:#1b1e27; border:1px solid #2a2f3d; border-radius:.7rem;
+        padding:1rem; margin-bottom:1rem; }
+table { width:100%; border-collapse:collapse; }
+th { text-align:left; color:#9aa2b4; font-size:.8rem; text-transform:uppercase;
+     letter-spacing:.04em; padding:.4rem .5rem; border-bottom:1px solid #2a2f3d; }
+td { padding:.55rem .5rem; border-bottom:1px solid #21252f;
+     font-variant-numeric:tabular-nums; }
+tr:last-child td { border-bottom:0; }
+td.id { font-weight:700; }
+label { display:block; margin:.8rem 0 .25rem; color:#9aa2b4; font-size:.9rem; }
+input, select, textarea { width:100%; padding:.7rem; font-size:1.05rem;
+        border-radius:.5rem; border:1px solid #333a4a; background:#0e1017;
+        color:#e6e8ee; font-family:inherit; }
+/* Every control that can be pressed lightens on hover, so that the thing under
+   the pointer is obvious without having to guess whether it is live. The rule
+   is the same everywhere: one step lighter than the resting colour, and the
+   text one step brighter where the resting text is dimmed. Transitions are
+   short enough not to lag behind the pointer and are dropped entirely for
+   anyone who has asked the system for less movement. */
+button { padding:.8rem 1.1rem; font-size:1rem; font-weight:600; border:0;
+         border-radius:.5rem; background:#4c7dfd; color:#fff; cursor:pointer;
+         transition:background .12s ease, color .12s ease; }
+button:hover:enabled { background:#6a92ff; }
+button.secondary { background:#2a2f3d; }
+button.secondary:hover:enabled { background:#394154; }
+button:disabled { opacity:.5; cursor:default; }
+button.small { padding:.35rem .7rem; font-size:.85rem; }
+/* An anchor dressed as a button. Needed because the actions that open a dialog
+   are links: they carry a real href so they still work with no JavaScript, and
+   a <button> would have nowhere to go. */
+a.btn { display:inline-block; padding:.8rem 1.1rem; font-size:1rem;
+        font-weight:600; border-radius:.5rem; background:#4c7dfd; color:#fff;
+        text-align:center; text-decoration:none; cursor:pointer;
+        transition:background .12s ease, color .12s ease; }
+a.btn:hover { background:#6a92ff; color:#fff; text-decoration:none; }
+a.btn.secondary { background:#2a2f3d; color:#e6e8ee; }
+a.btn.secondary:hover { background:#394154; color:#e6e8ee; }
+button.wide { width:100%; margin-top:1rem; }
+a { color:#7fa4ff; transition:color .12s ease; }
+a:hover { color:#a5c0ff; text-decoration:underline; }
+a.row-link:hover, a.icon:hover, a.pill:hover, .pager a:hover {
+        text-decoration:none; }
+.row { display:flex; gap:.6rem; flex-wrap:wrap; }
+.row > * { flex:1; min-width:9rem; }
+.flash { background:#14351f; border:1px solid #2c6b3f; color:#b9f0cb;
+         padding:.7rem 1rem; border-radius:.5rem; margin-bottom:1rem; }
+.warn { background:#3a2412; border:1px solid #7a4a1c; color:#f5d4ae; }
+.err  { background:#3a1618; border:1px solid #7a2530; color:#f5b8bd; }
+video { width:100%; border-radius:.7rem; background:#000; display:block; }
+.videowrap { position:relative; }
+.reticle { position:absolute; inset:26% 26%; border:2px solid #4c7dfd;
+           border-radius:.4rem; pointer-events:none; }
+.status { color:#9aa2b4; font-size:.9rem; margin-top:.6rem; min-height:1.4rem; }
+dialog { border:1px solid #2a2f3d; border-radius:.8rem; background:#1b1e27;
+         color:#e6e8ee; padding:1.2rem; width:min(26rem,92vw); }
+dialog::backdrop { background:rgba(0,0,0,.65); }
+.muted { color:#9aa2b4; }
+tr.gone td { opacity:.45; }
+.tag { font-size:.72rem; text-transform:uppercase; letter-spacing:.05em;
+       background:#3a1618; border:1px solid #7a2530; color:#f5b8bd;
+       padding:.1rem .45rem; border-radius:.3rem; }
+.pills { display:flex; gap:.4rem; margin-bottom:1rem; align-items:center; }
+.pill { padding:.5rem 1rem; border-radius:1rem; background:#1b1e27;
+        border:1px solid #2a2f3d; color:#9aa2b4; text-decoration:none;
+        font-size:1rem; line-height:1.4; transition:background .12s ease, color .12s ease,
+        border-color .12s ease; }
+.pill:hover { background:#242936; border-color:#394154; color:#e6e8ee; }
+button.pill { font-family:inherit; font-weight:400; }
+.pill.on { background:#4c7dfd; border-color:#4c7dfd; color:#fff; }
+.pill.on:hover { background:#6a92ff; border-color:#6a92ff; color:#fff; }
+
+/* ── Top bar ─────────────────────────────────────────────────────────────── */
+.topbar { display:flex; align-items:center; justify-content:space-between;
+          gap:1rem; margin:0 0 1.2rem; position:sticky; top:0; z-index:20;
+          background:#12141a; padding:.8rem 0 .6rem; }
+.brand { font-size:1.4rem; font-weight:700; color:#e6e8ee;
+         text-decoration:none; letter-spacing:-.01em; }
+.brand-version { font-size:.7rem; font-weight:500; color:#767e91;
+                  letter-spacing:0; margin-left:.35rem; vertical-align:middle; }
+.icons { display:flex; gap:.4rem; flex-wrap:wrap; justify-content:center; }
+.icon { display:grid; place-items:center; width:2.6rem; height:2.6rem;
+        padding:0; border-radius:.6rem; background:#1b1e27;
+        border:1px solid #2a2f3d; color:#9aa2b4; cursor:pointer; }
+.icon { transition:background .12s ease, color .12s ease; }
+.icon:hover { background:#242936; color:#e6e8ee; }
+.icon svg { width:1.35rem; height:1.35rem; fill:currentColor; stroke:none;
+            display:block; margin:0 auto; }
+
+/* ── Dialogs ─────────────────────────────────────────────────────────────── */
+dialog.wide { width:min(34rem,94vw); }
+dialog h2 { margin:0 0 .2rem; font-size:1.25rem; }
+/* padding:0 and a grid centre are both needed. Without the reset this inherits
+   the .8rem/1.1rem padding every button gets, which inside a 2rem box leaves no
+   room for the glyph and shoves it into the bottom right corner. */
+.dlg-close { position:absolute; top:.7rem; right:.7rem; width:2rem;
+             height:2rem; padding:0; display:grid; place-items:center;
+             background:transparent; border:0; color:#9aa2b4;
+             font-size:1.4rem; line-height:1; cursor:pointer;
+             border-radius:.4rem; }
+.dlg-close:hover { background:#242936; color:#e6e8ee; }
+dialog { position:relative; }
+
+/* ── Pagination ──────────────────────────────────────────────────────────── */
+.pager { display:flex; align-items:center; justify-content:space-between;
+         gap:1rem; margin-top:1rem; flex-wrap:wrap; }
+.pager .count { color:#9aa2b4; font-size:.9rem; }
+.pager .links { display:flex; gap:.4rem; align-items:center; }
+.pager a, .pager span.here {
+  padding:.35rem .7rem; border-radius:.4rem; border:1px solid #2a2f3d;
+  background:#1b1e27; color:#9aa2b4; text-decoration:none; font-size:.9rem; }
+.pager a { transition:background .12s ease, color .12s ease,
+                      border-color .12s ease; }
+.pager a:hover { background:#242936; border-color:#394154; color:#e6e8ee; }
+.pager span.here { background:#4c7dfd; border-color:#4c7dfd; color:#fff; }
+.pager span.disabled { padding:.35rem .7rem; color:#4a5162; font-size:.9rem; }
+.back-link { font-size:.9rem; text-decoration:none; }
+
+/* Material icons sitting inside a text button. */
+button svg.btn-icon { width:1.05rem; height:1.05rem; fill:currentColor;
+                      stroke:none; vertical-align:-.18em; margin-right:.35rem; }
+
+button.with-icon { display:inline-flex; align-items:center; gap:.45rem;
+                   justify-content:center; }
+button.with-icon svg { width:1.05rem; height:1.05rem; fill:currentColor;
+                       stroke:none; flex:0 0 auto; }
+
+/* ── Row actions ─────────────────────────────────────────────────────────── */
+td.row-actions { text-align:right; white-space:nowrap; }
+td.row-actions > * { display:inline-block; vertical-align:middle; }
+td.row-actions form { display:inline-block; margin:0; }
+.icon-sm { display:inline-grid; place-items:center; width:2.4rem; height:2.4rem;
+           padding:0; border:0; border-radius:.4rem; background:transparent;
+           color:#7f879a; cursor:pointer; text-decoration:none; }
+.icon-sm { transition:background .12s ease, color .12s ease; }
+.icon-sm:hover { background:#242936; color:#e6e8ee; }
+.icon-sm.danger:hover { background:#3a1618; color:#f5b8bd; }
+.icon-sm svg { width:1.35rem; height:1.35rem; fill:currentColor; stroke:none;
+               display:block; margin:0 auto; }
+
+/* ── Clickable rows ──────────────────────────────────────────────────────── */
+table tbody tr:nth-child(even) { background:#1e222c; }
+tr[data-href] { cursor:pointer; }
+tr[data-href]:hover { background:#2a3040; }
+tr[data-href]:has(a.row-link:focus-visible) { background:#2a3040; }
+a.row-link { color:inherit; text-decoration:none; }
+a.row-link:focus-visible { outline:2px solid #4c7dfd; outline-offset:2px;
+                           border-radius:.2rem; }
+
+/* ── Grid layout ─────────────────────────────────────────────────────────── */
+/* --cols is the number of tiles per row asked for in the settings, and it is a
+   maximum rather than a fixed count. Each track is at least 7rem wide, and
+   otherwise exactly the width that fits --cols of them across the container,
+   so auto-fill lays out --cols columns whenever they fit and drops to fewer
+   when they would be narrower than that floor. Arithmetic proves it never
+   overshoots: an extra track would need the container to be wider than it is.
+   The plain declaration first is the fallback for a browser that cannot parse
+   max() inside minmax(); it wraps sensibly, it just ignores the setting. */
+.grid { display:grid; gap:.6rem;
+        grid-template-columns:repeat(auto-fill,minmax(7rem,1fr)); }
+.grid { grid-template-columns:
+          repeat(auto-fill,
+                 minmax(max(7rem,
+                            calc((100% - (var(--cols,3) - 1) * .6rem)
+                                 / var(--cols,3))),
+                        1fr)); }
+
+.tile { position:relative; min-width:0; background:#1e222c;
+        border:1px solid #2a2f3d; border-radius:.55rem; padding:.55rem .65rem; }
+.tile:hover { background:#2a3040; }
+/* When a tile has an inline background color (from health), lighten it slightly on hover */
+.tile[style*="background"]:hover { filter:brightness(1.15); }
+.tile.gone { opacity:.45; }
+
+/* The id link is stretched over the whole tile, so clicking anywhere on a tile
+   follows a real link. Doing it this way rather than with a click handler means
+   the grid does not depend on JavaScript at all, and middle click, ctrl click
+   and "copy link address" behave the way they do everywhere else. The delete
+   form is lifted above the overlay so its button still receives its own click.
+   The cost is that text inside a tile can no longer be selected with the mouse,
+   which is a fair trade for four short fields. */
+.tile-id::after { content:""; position:absolute; inset:0;
+                   border-radius:.55rem; cursor:pointer; }
+.tile form { position:relative; z-index:1; }
+.tile-id:focus-visible { outline:none; }
+.tile:has(.tile-id:focus-visible) { outline:2px solid #4c7dfd; outline-offset:2px;
+                                    background:#2a3040; }
+.tile-top { display:flex; align-items:center; justify-content:space-between;
+            gap:.3rem; }
+.tile-id { font-weight:700; font-size:1.05rem;
+           font-variant-numeric:tabular-nums; }
+/* Tiles are narrow by design, so every line clips rather than wrapping: a long
+   brand name must not make one tile twice the height of its neighbours. */
+.tile-line { margin:0; font-size:.85rem; overflow:hidden;
+             text-overflow:ellipsis; white-space:nowrap; }
+.tile-line.dim { color:#9aa2b4; }
+.tile .tag { display:inline-block; margin-top:.35rem; position:relative; z-index:1; }
+
+/* Health percentage in the lower right corner of grid tiles */
+.tile-health { position:absolute; bottom:.55rem; right:.65rem;
+               font-size:.85rem; font-weight:700;
+               font-variant-numeric:tabular-nums;
+               color:#fff; text-shadow:0 1px 2px rgba(0,0,0,.4);
+               z-index:0; }
+
+/* ── Health pill on the list ─────────────────────────────────────────────── */
+/* health.health_color() picks the background; the pill just gives it a shape
+   and keeps the text readable regardless of which colour lands there. */
+.health-pill { display:inline-block; padding:.15rem .55rem; border-radius:1rem;
+               font-size:.82rem; font-weight:600; font-variant-numeric:tabular-nums;
+               color:#e6e8ee; }
+
+/* ── Layout switch ───────────────────────────────────────────────────────── */
+.pills form.viewswitch { display:flex; gap:.2rem; margin-left:auto; }
+.icon-sm.on { background:#4c7dfd; color:#fff; }
+.icon-sm.on:hover { background:#6a92ff; color:#fff; }
+
+/* A destructive action that is not the page's main button. */
+button.secondary.danger { color:#f5b8bd; }
+button.secondary.danger:hover:enabled { background:#3a1618;
+                                        color:#f5b8bd; }
+
+/* ── Settings sections ───────────────────────────────────────────────────── */
+.section { margin:1.7rem 0 .7rem; }
+.section:first-of-type { margin-top:.6rem; }
+.section h2 { font-size:1.05rem; margin:0 0 .2rem; }
+.section p { margin:0; color:#9aa2b4; font-size:.9rem; }
+
+/* ── Previous/next on a battery's page ───────────────────────────────────── */
+.prev-next { display:flex; gap:.4rem; flex:0 0 auto; }
+.prev-next .btn { padding:.5rem .8rem; font-size:.9rem; white-space:nowrap; }
+a.btn.disabled, span.btn.disabled { opacity:.35; cursor:default;
+                                    pointer-events:none; }
+
+/* ── Where a battery is ──────────────────────────────────────────────────── */
+.where { margin:-.4rem 0 1rem; color:#9aa2b4; }
+.where strong { color:#e6e8ee; font-weight:600; }
+
+/* ── Page actions ────────────────────────────────────────────────────────── */
+/* The buttons directly under the tabs. They share the width on a wide screen
+   and stack on a narrow one, so neither ends up a lone stripe across a phone. */
+.actions { display:flex; gap:.6rem; flex-wrap:wrap; margin-bottom:1rem; }
+.actions > * { flex:1; min-width:11rem; }
+
+/* ── Condition figures ───────────────────────────────────────────────────── */
+.figures { display:grid; grid-template-columns:repeat(3,minmax(0,1fr));
+           gap:.6rem; margin-bottom:.8rem; }
+.figure-label { margin:0; color:#9aa2b4; font-size:.8rem;
+                text-transform:uppercase; letter-spacing:.04em; }
+.figure { margin:.15rem 0 0; font-size:1.5rem; font-weight:700;
+          font-variant-numeric:tabular-nums; }
+.figure .unit { font-size:.85rem; font-weight:400; color:#9aa2b4; }
+
+/* ── Capacity and resistance chart ──────────────────────────────────────── */
+/* preserveAspectRatio is none on the element, so the drawing stretches to the
+   width available. Strokes are given vector-effect so that stretching does not
+   also stretch the lines into wedges. Dual-axis: capacity (blue) and resistance
+   (red) both map to the full height with independent scales. */
+.chart { width:100%; height:150px; display:block; margin:.4rem 0 .2rem;
+         overflow:visible; }
+.chart line, .chart polyline, .chart circle { vector-effect:non-scaling-stroke; }
+.chart-nominal { stroke:#7f879a; stroke-width:1; stroke-dasharray:4 4; }
+.chart-line { fill:none; stroke:#4c7dfd; stroke-width:2;
+              stroke-linejoin:round; stroke-linecap:round; }
+.chart-dot { fill:#4c7dfd; }
+.chart-other { fill:none; stroke:#9aa2b4; stroke-width:1.5; }
+.chart-resistance { fill:none; stroke:#ff6b6b; stroke-width:2;
+                    stroke-linejoin:round; stroke-linecap:round; }
+.chart-resistance-dot { fill:#ff6b6b; }
+.chart-key { display:flex; justify-content:space-between; gap:1rem;
+             color:#9aa2b4; font-size:.8rem; margin-bottom:.6rem; }
+
+/* ── Batch pages ──────────────────────────────────────────────────────────── */
+.batch-rows input { padding:.45rem .55rem; font-size:.95rem; min-width:5.5rem; }
+.batch-rows td, .batch-rows th { padding:.35rem .4rem; }
+
+/* ── Readings table ──────────────────────────────────────────────────────── */
+table.readings td { font-size:.9rem; vertical-align:top; }
+table.readings td.row-actions { text-align:right; white-space:nowrap; }
+table.readings td.row-actions form { display:inline-block; margin:0; }
+table.readings td.row-actions > * { display:inline-block; vertical-align:middle; }
+table.readings td.row-actions .icon-sm { display:inline-flex; }
+
+/* ── Movement ────────────────────────────────────────────────────────────── */
+/* The hover fades above are the only animation in the application. Anyone who
+   has told their system they would rather not have movement gets the same
+   colours, arriving instantly. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition:none !important; }
+}
+
+/* ── Reusable values ─────────────────────────────────────────────────────── */
+/* One-click copies of values already in the database, sitting under the field
+   they fill. Smaller and quieter than the pills, because they are a shortcut
+   rather than a choice: ignoring them and typing is always still valid. */
+.chips { display:flex; flex-wrap:wrap; gap:.3rem; margin-top:.4rem; }
+.chip { padding:.2rem .6rem; font-size:.82rem; font-weight:400;
+        font-family:inherit; border-radius:1rem; background:#1b1e27;
+        border:1px solid #2a2f3d; color:#9aa2b4; cursor:pointer;
+        max-width:100%; overflow:hidden; text-overflow:ellipsis;
+        white-space:nowrap;
+        transition:background .12s ease, color .12s ease,
+                   border-color .12s ease; }
+.chip:hover { background:#242936; border-color:#394154; color:#e6e8ee; }
+
+/* A figure that has crossed a configured limit. It takes the amber of the
+   warning box below it rather than a red of its own, so that the mark on the
+   number and the explanation for it read as one thing rather than two. The pale
+   pink used here before was technically applied and practically invisible at
+   this size against the page. Colour is never the only signal: the triangle
+   carries it too, and the box says it in words. */
+.figure.over { color:#e8a33d; }
+.alert { width:1.05rem; height:1.05rem; fill:#e8a33d; flex:0 0 auto;
+         vertical-align:-1px; }
+
+/* A warning box with the same triangle in it. flex rather than a plain block so
+   the icon sits beside the text instead of being swallowed by the first line. */
+.flash.warn { display:flex; align-items:flex-start; gap:.6rem; }
+.flash.warn strong { color:#ffe6c4; }
+.flash.warn .alert { margin-top:.15rem; }
+
+/* ── Disclosures used as buttons ─────────────────────────────────────────── */
+/* "Add an instrument", "Add a procedure" and the per-item "Edit" controls are
+   all <details> kept closed until asked for, so the instruments page reads as
+   information first and a form only once you ask for one. The default
+   disclosure triangle is dropped in favour of looking like an ordinary
+   button, since that is what these already look like everywhere else in the
+   application. */
+details > summary { cursor:pointer; }
+details > summary::-webkit-details-marker { display:none; }
+summary.btn, summary.btn-summary, button.btn-summary { list-style:none; }
+summary.btn { display:block; padding:.8rem 1.1rem; font-size:1rem;
+             font-weight:600; border-radius:.5rem; background:#4c7dfd;
+             color:#fff; text-align:center;
+             transition:background .12s ease; }
+summary.btn:hover { background:#6a92ff; }
+.add-disclosure { margin-bottom:1rem; }
+.add-disclosure .card { margin-top:.6rem; margin-bottom:0; }
+button.btn-summary, summary.btn-summary {
+  padding:.4rem .8rem; font-size:.85rem; font-weight:600; border-radius:.4rem;
+  background:#2a2f3d; color:#e6e8ee; border:1px solid #333a4a;
+  transition:background .12s ease; }
+button.btn-summary:hover, summary.btn-summary:hover { background:#394154; }
+
+/* ── Instruments and procedures ──────────────────────────────────────────── */
+/* One procedure inside an instrument's card. The top border is what separates
+   one procedure from the next; the first one additionally gets a stronger
+   rule above it to separate the list from the instrument's own heading and
+   its edit form. */
+.mode-entry { padding:.9rem 0; border-top:1px solid #21252f; }
+.mode-entry:first-of-type { border-top:1px solid #2a2f3d; margin-top:.8rem; }
+
+/* Small "charged" / "analysed" label beside a procedure's name, so which
+   kind of reading it applies to is visible without opening its edit form. */
+.kind-badge { display:inline-block; font-size:.72rem; padding:.1rem .5rem;
+             border-radius:999px; background:#2a2f3d; color:#9aa2b4;
+             text-transform:uppercase; letter-spacing:.03em; margin-left:.4rem;
+             vertical-align:middle; }
+
+/* A procedure's rendered details sit in the open, so the info icon on a
+   reading has somewhere readable to land; the edit form is tucked behind a
+   native <details> disclosure so a card with several procedures does not
+   turn into a wall of open text fields. */
+.edit-disclosure { margin-top:.6rem; }
+.edit-disclosure summary { cursor:pointer; color:#9aa2b4; font-size:.85rem;
+                           font-weight:600; }
+.edit-disclosure summary:hover { color:#e6e8ee; }
+.edit-disclosure[open] summary { margin-bottom:.6rem; }
+
+/* Move-up/move-down buttons sit beside the delete icon, same size, same
+   family, so reordering reads as one more small action rather than a
+   different kind of control bolted on. */
+.reorder-buttons { display:flex; gap:.1rem; }
+.reorder-buttons button:disabled { opacity:.25; cursor:default; }
+
+/* A mode's protocol, rendered from markdown. Deliberately plain rather than
+   themed to look like the rest of the page: this is someone else's write-up
+   in someone else's structure, headings and all, and should read like a note
+   rather than like another section of the application. */
+.markdown { font-size:.92rem; color:#c7ccd8; margin-top:.5rem; }
+.markdown > :first-child { margin-top:0; }
+.markdown > :last-child { margin-bottom:0; }
+.markdown p { margin:.5rem 0; }
+.markdown ul, .markdown ol { margin:.5rem 0; padding-left:1.3rem; }
+.markdown li { margin:.15rem 0; }
+.markdown a { color:#7fa4ff; }
+.markdown img { max-width:100%; border-radius:.4rem; }
+.markdown code { background:#0e1017; border:1px solid #2a2f3d;
+                 border-radius:.3rem; padding:.05rem .3rem; font-size:.88em; }
+.markdown pre { background:#0e1017; border:1px solid #2a2f3d;
+                border-radius:.5rem; padding:.6rem .8rem; overflow-x:auto; }
+.markdown pre code { border:0; padding:0; background:none; }
+.markdown blockquote { margin:.5rem 0; padding:.1rem .8rem;
+                       border-left:3px solid #333a4a; color:#9aa2b4; }
+.markdown table { margin:.5rem 0; width:auto; max-width:100%; border-collapse:collapse; }
+.markdown th, .markdown td { border:1px solid #2a2f3d; padding:.3rem .6rem;
+                             text-align:left; }
+.markdown h1, .markdown h2, .markdown h3, .markdown h4 { margin:.8rem 0 .3rem;
+                       font-size:1rem; }
+
+/* ── The markdown editor: toolbar + textarea + toggleable preview ───────── */
+.md-editor { border:1px solid #2a2f3d; border-radius:.6rem; overflow:hidden;
+            background:#12151d; }
+.md-toolbar { display:flex; flex-wrap:wrap; gap:.15rem; padding:.35rem;
+             border-bottom:1px solid #2a2f3d; background:#171b25; }
+.md-toolbar button { display:inline-grid; place-items:center; min-width:2rem;
+                     height:2rem; padding:0 .5rem; border:0; border-radius:.35rem;
+                     background:transparent; color:#c7ccd8; cursor:pointer;
+                     font-size:.85rem; }
+.md-toolbar button:hover { background:#242936; color:#e6e8ee; }
+.md-toolbar .md-spacer { flex:1; }
+.md-toolbar .md-preview-toggle { color:#9aa2b4; font-size:.8rem; padding:0 .7rem; }
+.md-editor textarea { display:block; width:100%; border:0; border-radius:0;
+                      background:transparent; resize:vertical; }
+.md-editor textarea:focus { outline:none; box-shadow:none; }
+.md-editor .md-preview { padding:.7rem .9rem; min-height:5rem; }

@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block content %}
+  <h1>Print labels</h1>
+  <p class="sub">A single id, a list, a range, or any mixture:
+     <code>7</code>, <code>5,7,9</code>, <code>5-9</code>,
+     <code>1, 3, 5-8, 12</code>.</p>
+
+  {% if print_error %}<p class="flash err">{{ print_error }}</p>{% endif %}
+
+  <div class="card">
+    <form method="post" action="/print">
+      <label for="spec">Ids</label>
+      <input id="spec" name="spec" value="{{ print_spec | default(value="") }}" data-autofocus
+             autocomplete="off" placeholder="5-9">
+      <button type="submit" class="wide secondary">Show what would print</button>
+    </form>
+
+    {% if print_resolved %}
+      <h3 style="margin:1.2rem 0 .4rem">{{ print_resolved | length }} label(s) to print</h3>
+      <table>
+        <tr><th>ID</th><th>Type</th><th>Brand and capacity</th></tr>
+        {% for b in print_resolved %}
+          <tr>
+            <td class="id">{{ b.id | pad3 }}</td>
+            <td>{{ b.type }}</td>
+            <td>
+              {% if b.brand or b.nominal_mah %}{{ b.brand }}{% if b.brand and b.nominal_mah %} {% endif %}{% if b.nominal_mah %}{{ b.nominal_mah }} mAh{% endif %}
+              {% else %}<span class="muted">&mdash;</span>{% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </table>
+
+      {% if print_missing %}
+        <p class="flash warn" style="margin-top:1rem">Skipping
+           {{ print_missing | join(sep=", ") }}: no battery has ever had
+           {% if print_missing | length == 1 %}that id{% else %}those ids{% endif %}.</p>
+      {% endif %}
+      {% if print_deleted %}
+        <p class="flash warn" style="margin-top:1rem">Skipping
+           {{ print_deleted | join(sep=", ") }}: deleted. Restore
+           {% if print_deleted | length == 1 %}it{% else %}them{% endif %} first if the label
+           is needed.</p>
+      {% endif %}
+
+      <form method="post" action="/print">
+        <input type="hidden" name="spec" value="{{ print_spec }}">
+        <input type="hidden" name="confirm" value="yes">
+        <button type="submit" class="wide">Print {{ print_resolved | length }} label(s)</button>
+      </form>
+    {% endif %}
+  </div>
+{% endblock content %}

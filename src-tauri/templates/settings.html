@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block content %}
+  <h1>Settings</h1>
+  <p class="sub">Each setting falls back to its environment variable, and then
+     to a built-in default. Clearing a field removes the override so it tracks
+     the fallback again. Changes take effect straight away; nothing needs
+     restarting.</p>
+
+  <form method="post" action="/settings">
+    {% for section in settings %}
+      <div class="section">
+        <h2>{{ section.title }}</h2>
+        <p>{{ section.blurb }}</p>
+      </div>
+
+      {% for s in section.settings %}
+      <div class="card">
+        <label for="{{ s.key }}" style="margin-top:0">
+          {{ s.label }}
+          <span class="tag" style="background:#2a2f3d;border-color:#333a4a;color:#9aa2b4">
+            {{ s.source }}
+          </span>
+        </label>
+
+        {% if s.kind == "bool" %}
+          <label style="display:flex;gap:.6rem;align-items:center">
+            <input type="checkbox" id="{{ s.key }}" name="{{ s.key }}"
+                   style="width:auto" {% if s.value %}checked{% endif %}>
+            <span>{% if s.value %}On{% else %}Off{% endif %}</span>
+          </label>
+        {% elif s.kind == "choice" %}
+          <select id="{{ s.key }}" name="{{ s.key }}">
+            {% for choice in s.choices %}
+              <option value="{{ choice }}" {% if choice == s.text %}selected{% endif %}>{{ choice }}</option>
+            {% endfor %}
+          </select>
+        {% else %}
+          <input id="{{ s.key }}" name="{{ s.key }}" value="{{ s.text }}"
+                 autocomplete="off" placeholder="leave empty to use the fallback">
+        {% endif %}
+
+        <p class="muted" style="font-size:.9rem;margin:.5rem 0 0">{{ s.help }}</p>
+        <p class="muted" style="font-size:.85rem;margin:.3rem 0 0">
+          Without an override: {{ s.fallback }}</p>
+      </div>
+      {% endfor %}
+    {% endfor %}
+
+    <button type="submit" class="wide">Save settings</button>
+  </form>
+
+  <div class="card" style="margin-top:1rem">
+    <p class="muted" style="margin-top:0">Clearing every override puts all of
+       these back to whatever the environment says, or to the built-in
+       defaults where it says nothing. No batteries are affected.</p>
+    <form method="post" action="/settings/reset"
+          data-confirm="Clear every setting override?">
+      <button type="submit" class="secondary" style="width:100%">
+        Clear all overrides</button>
+    </form>
+  </div>
+
+  <div class="card" style="margin-top:1rem">
+    <h3 style="margin-top:0">Export the database</h3>
+    <p class="muted" style="margin-top:0">Backup the whole database in SQLite
+       format.</p>
+    <button type="button" id="export-db-btn" class="secondary" style="width:100%">
+      Save a copy&hellip;</button>
+    <p class="muted" id="export-db-status" style="font-size:.85rem;margin:.5rem 0 0"></p>
+  </div>
+
+  <div class="card" style="margin-top:1rem">
+    <h3 style="margin-top:0">Import a database</h3>
+    <p class="muted" style="margin-top:0">Replace every battery, instrument
+       and reading in this app with the contents of another
+       <code>batteries.db</code> file.</p>
+    <button type="button" id="import-db-btn" class="secondary danger" style="width:100%">
+      Choose a database file&hellip;</button>
+    <p class="muted" id="import-db-status" style="font-size:.85rem;margin:.5rem 0 0"></p>
+  </div>
+{% endblock content %}
