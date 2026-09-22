@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+{% import "macros.html" as macros %}
+{% block content %}
+  <p class="sub">{{ heading }}</p>
+
+  <div class="pills">
+    {% for scope in scopes %}
+      <a class="pill {% if show == scope.value %}on{% endif %}"
+         href="/?{{ filter_query }}show={{ scope.value }}">{{ scope.text }}</a>
+    {% endfor %}
+
+    <form method="post" action="/view" class="viewswitch">
+      <input type="hidden" name="next" value="{{ list_url }}">
+      <button type="submit" name="view" value="table"
+              class="icon-sm {% if view == "table" %}on{% endif %}"
+              title="Show as a table" aria-label="Show as a table">{{ icon(name="table") | safe }}</button>
+      <button type="submit" name="view" value="grid"
+              class="icon-sm {% if view == "grid" %}on{% endif %}"
+              title="Show as a grid" aria-label="Show as a grid">{{ icon(name="grid") | safe }}</button>
+    </form>
+
+    <form method="get" action="/" style="margin-left:auto">
+      {% if type_filter %}<input type="hidden" name="type" value="{{ type_filter }}">{% endif %}
+      {% if location_filter %}<input type="hidden" name="location" value="{{ location_filter }}">{% endif %}
+      {% if search %}<input type="hidden" name="q" value="{{ search }}">{% endif %}
+      {% if show != "active" %}<input type="hidden" name="show" value="{{ show }}">{% endif %}
+      <select name="sort" onchange="this.form.requestSubmit()"
+              title="Sort order" aria-label="Sort by">
+        <option value="id" {% if sort == "id" %}selected{% endif %}>Sort: ID</option>
+        <option value="type" {% if sort == "type" %}selected{% endif %}>Sort: Type</option>
+        <option value="location" {% if sort == "location" %}selected{% endif %}>Sort: Location</option>
+        <option value="health" {% if sort == "health" %}selected{% endif %}>Sort: Health &#11015;</option>
+        <option value="resistance" {% if sort == "resistance" %}selected{% endif %}>Sort: Resistance &#11015;</option>
+      </select>
+    </form>
+  </div>
+
+  <div class="card">
+    <form method="get" action="/">
+      <input type="hidden" name="show" value="{{ show }}">
+      <div class="row">
+        <select name="type">
+          <option value="">Any type</option>
+          {% for value in types %}
+            <option value="{{ value }}" {% if value == type_filter %}selected{% endif %}>{{ value }}</option>
+          {% endfor %}
+        </select>
+        <select name="location">
+          <option value="">Anywhere</option>
+          {% for value in locations %}
+            <option value="{{ value }}" {% if value == location_filter %}selected{% endif %}>{{ value }}</option>
+          {% endfor %}
+        </select>
+        <input name="q" value="{{ search }}" placeholder="Search brand or notes">
+        <button type="submit" class="secondary with-icon">
+          {{ icon(name="filter") | safe }}<span>Filter</span>
+        </button>
+      </div>
+    </form>
+  </div>
+
+  <div class="card">
+    {% if batteries and view == "grid" %}
+      <div class="grid" style="--cols:{{ grid_columns }}">
+        {% for b in batteries %}
+          {% if b.ir_over_limit %}{% set tile_bg = "hsl(30, 75%, 35%)" %}
+          {% elif b.has_health_pct %}{% set tile_bg = b.health_color %}
+          {% else %}{% set tile_bg = "" %}{% endif %}
+          <article class="tile {% if b.deleted_at %}gone{% endif %}"
+                   {% if tile_bg %}style="background:{{ tile_bg }}"{% endif %}>
+            <div class="tile-top">
+              <a href="/b/{{ b.id }}" class="row-link tile-id">{{ b.id | pad3 }}</a>
+              {{ macros::battery_action(b=b, list_url=list_url) }}
+            </div>
+            <p class="tile-line">{{ b.type }}{% if b.nominal_mah %} &middot;
+              {{ b.nominal_mah }} mAh{% endif %}</p>
+            <p class="tile-line dim">{% if b.brand %}{{ b.brand }}{% else %}&mdash;{% endif %}</p>
+            <p class="tile-line dim">{% if b.location %}{{ b.location }}{% else %}no location{% endif %}</p>
+            {% if b.has_health_pct or b.ir_over_limit %}
+              <span class="tile-health" title="{{ b.health_title }}">
+                {% if b.has_health_pct %}{{ b.health_pct }}%{% else %}&mdash;{% endif %}
+                {% if b.ir_over_limit %} &#9888;{% endif %}
+              </span>
+            {% endif %}
+            {% if b.deleted_at %}<span class="tag">deleted</span>{% endif %}
+          </article>
+        {% endfor %}
+      </div>
+    {% elif batteries %}
+      <table class="rows">
+        <thead>
+          <tr>
+            <th>ID</th><th>Type</th><th>Brand</th>
+            <th>Nominal</th><th>Location</th><th>Health</th><th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for b in batteries %}
+            <tr class="{% if b.deleted_at %}gone{% endif %}" data-href="/b/{{ b.id }}">
+              <td class="id">
+                <a href="/b/{{ b.id }}" class="row-link">{{ b.id | pad3 }}</a>
+                {% if b.deleted_at %}<span class="tag">deleted</span>{% endif %}
+              </td>
+              <td>{{ b.type }}</td>
+              <td>{% if b.brand %}{{ b.brand }}{% else %}<span class="muted">&mdash;</span>{% endif %}</td>
+              <td>{% if b.nominal_mah %}{{ b.nominal_mah }} mAh{% else %}<span class="muted">&mdash;</span>{% endif %}</td>
+              <td>{% if b.location %}{{ b.location }}{% else %}<span class="muted">&mdash;</span>{% endif %}</td>
+              <td>{{ macros::battery_health(b=b) }}</td>
+              <td class="row-actions">{{ macros::battery_action(b=b, list_url=list_url) }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="muted">No batteries match{% if total == 0 %} yet{% endif %}. Add one with
+         the battery button above.</p>
+    {% endif %}
+  </div>
+
+  {% if pages > 1 %}
+    <div class="pager">
+      <span class="count">
+        Showing {{ first_row }}&ndash;{{ last_row }} of {{ total }}</span>
+      <span class="links">
+        {% if page > 1 %}
+          <a href="/?{{ page_query }}page={{ page - 1 }}">Previous</a>
+        {% else %}<span class="disabled">Previous</span>{% endif %}
+
+        {% for n in page_numbers %}
+          {% if n == page %}<span class="here">{{ n }}</span>
+          {% elif n == 0 %}<span class="disabled">&hellip;</span>
+          {% else %}<a href="/?{{ page_query }}page={{ n }}">{{ n }}</a>{% endif %}
+        {% endfor %}
+
+        {% if page < pages %}
+          <a href="/?{{ page_query }}page={{ page + 1 }}">Next</a>
+        {% else %}<span class="disabled">Next</span>{% endif %}
+      </span>
+    </div>
+  {% endif %}
+
+  <datalist id="all-types">
+    {% for value in types %}<option value="{{ value }}">{% endfor %}
+  </datalist>
+  <datalist id="all-brands">
+    {% for value in brands %}<option value="{{ value }}">{% endfor %}
+  </datalist>
+  <datalist id="all-locations">
+    {% for value in locations %}<option value="{{ value }}">{% endfor %}
+  </datalist>
+{% endblock content %}

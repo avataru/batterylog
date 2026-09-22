@@ -1,0 +1,9 @@
+{# The "shell" (<html>/<head>/nav chrome/script tags) lives once in dist/index.html,
+   not here: a rendered page is an HTML *fragment* swapped into that shell's
+   content container over Tauri's IPC, not a full document navigation. This
+   template only supplies the flash-message area and the content block, so
+   every page extending it still shares that much markup. #}
+{% if msg %}<p class="flash">{{ msg }}</p>{% endif %}
+{% if error and not open_dialog %}<p class="flash err">{{ error }}</p>{% endif %}
+
+{% block content %}{% endblock content %}

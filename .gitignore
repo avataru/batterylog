@@ -1,0 +1,20 @@
+# rust compiled folders
+target/
+src-tauri/gen/schemas/
+
+# app's own data
+*.db
+*.db-wal
+*.db-shm
+.window-state.json
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+
+# miscellaneous
+TODO.md
+HANDOVER.md

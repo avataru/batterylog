@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% block content %}
+  <h1>Batch add reading</h1>
+  <p class="sub">Record readings for multiple batteries at once. Select the kind
+     and date, then choose an instrument. The form will show as many rows as the
+     instrument has slots, so you can fill in the measurements for each battery.
+     Leave a row empty to skip it.</p>
+
+  {% if page_error %}<p class="flash err">{{ page_error }}</p>{% endif %}
+
+  <div class="card">
+    <form method="post" action="/batch/measure" data-kind-scope id="batch-form">
+      <div class="row">
+        <div>
+          <label for="kind">Kind</label>
+          <select id="kind" name="kind" data-kind-select>
+            {% set selected_kind = common.kind | default(value="analysed") %}
+            {% for value in kinds %}
+              <option value="{{ value }}"
+                {% if value == selected_kind %}selected{% endif %}>{{ value | title_case }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label for="measured_at">Date</label>
+          <input id="measured_at" name="measured_at" type="date"
+                 value="{{ common.measured_at | default(value=today) }}">
+        </div>
+      </div>
+
+      <div class="row" data-kinds="charged analysed">
+        <div>
+          <label for="batch-instrument">Instrument</label>
+          <select id="batch-instrument" name="instrument_id"
+                  data-modes-target="#batch-mode" data-kind-filter="#kind">
+            <option value="">Select an instrument&hellip;</option>
+            {% set selected_instrument = common.instrument_id | default(value=0) %}
+            {% for i in instruments %}
+              <option value="{{ i.id }}" data-modes='{{ i.modes | json_encode }}'
+                      data-slots="{{ i.slots }}"
+                      {% if i.id == selected_instrument %}selected{% endif %}>
+                {{ i.name }} ({{ i.slots }} slot{% if i.slots != 1 %}s{% endif %})</option>
+            {% endfor %}
+          </select>
+          {% if not instruments %}
+            <p class="muted" style="font-size:.8rem;margin:.3rem 0 0">
+              None registered yet. <a href="/instruments">Add one</a>.</p>
+          {% endif %}
+        </div>
+        <div>
+          <label for="batch-mode">Procedure</label>
+          <select id="batch-mode" name="mode_id"
+                  data-selected="{{ common.mode_id | default(value="") }}">
+            <option value="">Select a procedure&hellip;</option>
+          </select>
+        </div>
+      </div>
+
+      <div data-kinds="bought">
+        <p class="muted" style="font-size:.9rem;margin:1rem 0">A purchase records
+           only the date, so just enter the battery ids below.</p>
+      </div>
+
+      <p class="muted" style="font-size:.85rem;margin:1rem 0" data-kinds="charged analysed" data-procedure-fields hidden>
+        Select an instrument and procedure to show measurement fields.</p>
+
+      <table class="batch-rows" style="margin-top:1rem" data-kinds="charged analysed" data-procedure-fields hidden>
+        <thead>
+          <tr>
+            <th>Battery ID</th>
+            <th data-kinds="analysed" data-field="capacity_mah">Capacity<br>(mAh)</th>
+            <th data-field="ir_mohm">Resistance<br>(mΩ)</th>
+            <th data-field="discharge_ma">Discharge<br>(mA)</th>
+            <th data-field="charge_ma">Charge<br>(mA)</th>
+            <th data-field="notes">Notes</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in slot_rows %}
+            <tr data-slot-row>
+              <td>
+                <input name="battery_id_{{ row.i }}" inputmode="numeric"
+                       autocomplete="off" placeholder="id" value="{{ row.battery_id }}">
+              </td>
+              <td data-kinds="analysed" data-field="capacity_mah">
+                <input name="capacity_mah_{{ row.i }}" inputmode="numeric"
+                       autocomplete="off" placeholder="e.g. 850" value="{{ row.capacity_mah }}">
+              </td>
+              <td data-field="ir_mohm">
+                <input name="ir_mohm_{{ row.i }}" inputmode="numeric"
+                       autocomplete="off" placeholder="e.g. 32" value="{{ row.ir_mohm }}">
+              </td>
+              <td data-field="discharge_ma">
+                <input name="discharge_ma_{{ row.i }}" inputmode="numeric"
+                       autocomplete="off" placeholder="e.g. 500" value="{{ row.discharge_ma }}">
+              </td>
+              <td data-field="charge_ma">
+                <input name="charge_ma_{{ row.i }}" inputmode="numeric"
+                       autocomplete="off" placeholder="e.g. 1000" value="{{ row.charge_ma }}">
+              </td>
+              <td data-field="notes">
+                <input name="notes_{{ row.i }}" autocomplete="off" placeholder="optional" value="{{ row.notes }}">
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+
+      <table class="batch-rows" style="margin-top:1rem" data-kinds="bought">
+        <thead>
+          <tr>
+            <th>Battery ID</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in bought_rows %}
+            <tr>
+              <td>
+                <input name="battery_id_{{ row.i }}" inputmode="numeric"
+                       autocomplete="off" placeholder="id" value="{{ row.battery_id }}">
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+
+      <button type="submit" class="wide" style="margin-top:1rem">Record readings</button>
+    </form>
+  </div>
+{% endblock content %}

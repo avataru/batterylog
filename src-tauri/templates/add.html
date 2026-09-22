@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% import "macros.html" as macros %}
+{% block content %}
+  <h1>Add battery</h1>
+  <p class="sub">Only the type is required. Ids that have ever been used,
+     including deleted ones, are refused.</p>
+
+  {% if add_error %}<p class="flash err">{{ add_error }}</p>{% endif %}
+  {% if not printer.available %}
+    <p class="flash warn">{{ printer.description }}</p>
+  {% endif %}
+
+  <div class="card">
+    <form method="post" action="/add">
+      <div class="row">
+        <div>
+          <label for="battery_id">Id</label>
+          <input id="battery_id" name="battery_id" inputmode="numeric"
+                 value="{{ add_values.battery_id | default(value=suggested_id) }}" autocomplete="off">
+        </div>
+        <div>
+          <label for="count">How many</label>
+          <input id="count" name="count" inputmode="numeric"
+                 value="{{ add_values.count | default(value="1") }}" autocomplete="off">
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <label for="type">Type</label>
+          <input id="type" name="type" list="all-types" required data-autofocus
+                 value="{{ add_values.type | default(value="") }}" placeholder="AA" autocomplete="off">
+        </div>
+        <div>
+          <label for="nominal">Nominal capacity (mAh)</label>
+          <input id="nominal" name="nominal_mah" inputmode="numeric"
+                 value="{{ add_values.nominal_mah | default(value="") }}" placeholder="optional"
+                 autocomplete="off">
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <label for="brand">Brand</label>
+          <input id="brand" name="brand" list="all-brands" autocomplete="off"
+                 value="{{ add_values.brand | default(value="") }}" placeholder="optional">
+        </div>
+        <div>
+          <label for="location">Location</label>
+          <input id="location" name="location" list="all-locations" autocomplete="off"
+                 value="{{ add_values.location | default(value="") }}" placeholder="optional">
+          {{ macros::chips(target="#location", values=top_locations) }}
+        </div>
+      </div>
+
+      {% if printer.available %}
+        <div style="margin-top:1rem">
+          <label style="display:flex;gap:.6rem;align-items:center">
+            <input type="checkbox" name="print_label" id="print_label" value="1"
+                   style="width:auto" {% if print_on_add %}checked{% endif %}>
+            <span>Print labels after saving</span>
+          </label>
+        </div>
+      {% endif %}
+
+      <button type="submit" class="wide" style="margin-top:1rem">Save</button>
+    </form>
+  </div>
+
+  <datalist id="all-types">
+    {% for value in types %}<option value="{{ value }}">{% endfor %}
+  </datalist>
+  <datalist id="all-brands">
+    {% for value in brands %}<option value="{{ value }}">{% endfor %}
+  </datalist>
+  <datalist id="all-locations">
+    {% for value in locations %}<option value="{{ value }}">{% endfor %}
+  </datalist>
+{% endblock content %}

@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% import "macros.html" as macros %}
+{% block content %}
+  <h1>Batch change location</h1>
+  <p class="sub">Move several batteries to the same place at once, using the
+     same id syntax as the Print page: a single id, a list, a range, or any
+     mixture &mdash; <code>7</code>, <code>5,7,9</code>, <code>5-9</code>,
+     <code>1, 3, 5-8, 12</code>. A battery that does not exist, or that has
+     been deleted, is skipped rather than stopping the rest.</p>
+
+  {% if page_error %}<p class="flash err">{{ page_error }}</p>{% endif %}
+
+  <div class="card">
+    <form method="post" action="/batch/location">
+      <label for="spec">Ids</label>
+      <input id="spec" name="spec" value="{{ spec | default(value="") }}" data-autofocus
+             autocomplete="off" placeholder="5-9">
+
+      <label for="location">New location</label>
+      <input id="location" name="location" list="all-locations" autocomplete="off"
+             value="{{ location | default(value="") }}" placeholder="e.g. Case A, or TV remote">
+      {{ macros::chips(target="#location", values=top_locations) }}
+
+      <button type="submit" class="wide" style="margin-top:1rem">Move batteries</button>
+    </form>
+  </div>
+
+  <datalist id="all-locations">
+    {% for value in locations %}<option value="{{ value }}">{% endfor %}
+  </datalist>
+{% endblock content %}

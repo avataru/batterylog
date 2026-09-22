@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+{% import "macros.html" as macros %}
+{% block content %}
+  <h1>Scan</h1>
+
+  <div class="card">
+    <div id="scan-entry">
+      <p class="sub">Scan a label, or type an id and press Enter.</p>
+      <label for="manual">Battery id</label>
+      <div class="row">
+        <input id="manual" inputmode="numeric" placeholder="scan or type"
+               autocomplete="off" data-autofocus>
+        <button type="button" id="manual-go" class="secondary"
+                style="flex:0 0 auto" title="Open this battery's page">Open</button>
+      </div>
+      <p class="status" id="status"></p>
+      <p class="muted" style="font-size:.9rem">The scanner must be in keyboard
+         mode and send Enter after each code. This box takes focus back on its own
+         after every save, so a run of cells needs no clicking.</p>
+    </div>
+
+    <div id="scan-result" hidden>
+      <h2 id="dlg-title"></h2>
+      <p class="muted" id="dlg-sub" style="margin:0 0 .8rem"></p>
+      <p class="flash err" id="dlg-deleted" hidden>
+        This label belongs to a battery that was deleted. Restore it to put the
+        label back into service, then edit it if the sticker is now on a
+        different cell.</p>
+      <p style="margin:0">Currently at <strong id="dlg-current"></strong></p>
+
+      <div id="dlg-panes">
+        <div class="pills" style="margin:.9rem 0 0">
+          <button type="button" class="pill on" data-pane="move">Location</button>
+          <button type="button" class="pill" data-pane="read">Reading</button>
+        </div>
+
+        <div id="dlg-move">
+          <label for="dlg-location">Move it to</label>
+          <input id="dlg-location" list="all-locations" autocomplete="off">
+          {{ macros::chips(target="#dlg-location", values=top_locations) }}
+          <div class="row" style="margin-top:1rem">
+            <button type="button" id="dlg-save">Save</button>
+            <button type="button" id="dlg-cancel" class="secondary">Cancel</button>
+          </div>
+        </div>
+
+        <div id="dlg-read" hidden data-kind-scope>
+          <div class="row">
+            <div>
+              <label for="read-kind">Kind</label>
+              <select id="read-kind" data-kind-select>
+                {% for value in kinds %}
+                  <option value="{{ value }}"
+                    {% if value == "analysed" %}selected{% endif %}>{{ value | title_case }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div>
+              <label for="read-date">Date</label>
+              <input id="read-date" type="date" value="{{ today }}">
+            </div>
+          </div>
+
+          <div class="row" data-kinds="charged analysed">
+            <div>
+              <label for="read-instrument">Instrument</label>
+              <select id="read-instrument" data-modes-target="#read-mode"
+                      data-kind-filter="#read-kind">
+                <option value="">Select an instrument&hellip;</option>
+                {% for i in instruments %}
+                  <option value="{{ i.id }}" data-modes='{{ i.modes | json_encode }}'
+                          {% if i.id == last_used.instrument_id %}selected{% endif %}>
+                    {{ i.name }}</option>
+                {% endfor %}
+              </select>
+              {% if not instruments %}
+                <p class="muted" style="font-size:.8rem;margin:.3rem 0 0">
+                  None registered yet. <a href="/instruments">Add one</a>.</p>
+              {% endif %}
+            </div>
+            <div>
+              <label for="read-mode">Procedure</label>
+              <select id="read-mode" data-selected="{{ last_used.mode_id | default(value="") }}">
+                <option value="">Select a procedure&hellip;</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="row" data-kinds="charged analysed" data-procedure-fields hidden>
+            <div data-field="capacity_mah">
+              <label for="read-capacity">Capacity (mAh)</label>
+              <input id="read-capacity" inputmode="numeric" autocomplete="off"
+                     placeholder="e.g. 850">
+            </div>
+            <div data-field="ir_mohm">
+              <label for="read-ir">Resistance (mΩ)</label>
+              <input id="read-ir" inputmode="numeric" autocomplete="off"
+                     placeholder="e.g. 32">
+            </div>
+            <div data-field="discharge_ma">
+              <label for="read-rate">Discharge (mA)</label>
+              <input id="read-rate" inputmode="numeric" autocomplete="off"
+                     placeholder="e.g. 500"
+                     value="{{ last_used.discharge_ma | default(value="") }}">
+            </div>
+            <div data-field="charge_ma">
+              <label for="read-charge">Charge (mA)</label>
+              <input id="read-charge" inputmode="numeric" autocomplete="off"
+                     placeholder="e.g. 1000"
+                     value="{{ last_used.charge_ma | default(value="") }}">
+            </div>
+          </div>
+
+          <div data-kinds="charged analysed" data-field="notes" data-procedure-fields hidden>
+            <label for="read-notes">Notes</label>
+            <input id="read-notes" autocomplete="off"
+                   placeholder="anything unusual about this run">
+          </div>
+
+          <div class="row" style="margin-top:1rem">
+            <button type="button" id="read-save">Save reading</button>
+            <button type="button" id="read-cancel" class="secondary">Cancel</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="row" style="margin-top:1rem">
+        <button type="button" id="dlg-restore" hidden>Restore</button>
+        <a id="dlg-edit" hidden href="#" style="flex:1">
+          <button type="button" class="secondary" style="width:100%">Open and edit</button>
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <datalist id="all-locations">
+    {% for value in locations %}<option value="{{ value }}">{% endfor %}
+  </datalist>
+{% endblock content %}

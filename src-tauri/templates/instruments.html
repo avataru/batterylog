@@ -1,0 +1,383 @@
+{% extends "base.html" %}
+{% block content %}
+  <h1>Instruments</h1>
+  <p class="sub">The chargers and testers you measure cells with, and the
+     procedures each one offers.</p>
+
+  <details class="add-disclosure" {% if add_instrument_open %}open{% endif %}>
+    <summary class="btn wide">Add an instrument</summary>
+    <div class="card">
+      {% if add_instrument_error %}<p class="flash err">{{ add_instrument_error }}</p>{% endif %}
+      <form method="post" action="/instruments/add">
+        <div class="row">
+          <div style="flex:1">
+            <label for="new-instrument-name">Name</label>
+            <input id="new-instrument-name" name="name" required autocomplete="off"
+                   placeholder="e.g. SkyRC MC3000 or XTAR VC4"
+                   value="{{ add_instrument_values.name | default(value="") }}">
+          </div>
+          <div style="flex:0 0 8rem">
+            <label for="new-instrument-slots">Slots</label>
+            <input id="new-instrument-slots" name="slots" inputmode="numeric"
+                   value="{{ add_instrument_values.slots | default(value="1") }}">
+          </div>
+        </div>
+        <p class="muted" style="font-size:.8rem;margin:.4rem 0 0">Slots is how
+           many cells this instrument holds at once, which is what the batch
+           reading page uses to offer the right number of rows once this
+           instrument is chosen.</p>
+        <button type="submit" class="wide" style="margin-top:.6rem">Add instrument</button>
+      </form>
+    </div>
+  </details>
+
+  {% if not instruments %}
+    <p class="muted">No instruments yet. Add one above, then add its
+       procedures below it. Until at least one instrument exists, a reading of
+       anything but a bare purchase date has nothing to offer in its
+       Instrument dropdown and cannot be saved.</p>
+  {% endif %}
+
+  {% for i in instruments %}
+    {% set instrument_edit_open = edit_instrument_for == i.id %}
+    <div class="card" id="instrument-{{ i.id }}">
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <div>
+          <strong style="font-size:1.05rem">{{ i.name }}</strong>
+          <p class="muted" style="margin:.15rem 0 0;font-size:.85rem">
+            {{ i.slots }} slot{% if i.slots != 1 %}s{% endif %}</p>
+        </div>
+        <div style="display:flex;gap:.3rem;align-items:center">
+          <button type="button" class="icon-sm" data-toggle-details
+                  data-target="#instrument-edit-{{ i.id }}"
+                  title="Edit {{ i.name }}" aria-label="Edit {{ i.name }}">{{ icon(name="edit") | safe }}</button>
+          <form method="post" action="/instruments/{{ i.id }}/delete"
+                style="display:inline-block;margin:0"
+                data-confirm="Delete {{ i.name }} and every procedure on it? Readings that already used it keep their values, but stop naming an instrument or a procedure.">
+            <button type="submit" class="icon-sm danger"
+                    title="Delete {{ i.name }}" aria-label="Delete {{ i.name }}">{{ icon(name="delete") | safe }}</button>
+          </form>
+        </div>
+      </div>
+
+      <details class="edit-disclosure" id="instrument-edit-{{ i.id }}"
+                {% if instrument_edit_open %}open{% endif %}>
+        <summary style="display:none"></summary>
+        <form method="post" action="/instruments/{{ i.id }}/edit" data-cancel-target>
+          {% if edit_instrument_error and instrument_edit_open %}
+            <p class="flash err">{{ edit_instrument_error }}</p>
+          {% endif %}
+          {% if instrument_edit_open %}{% set values = edit_instrument_values %}{% else %}{% set values = i %}{% endif %}
+          <div class="row">
+            <div style="flex:1">
+              <label for="instrument-name-{{ i.id }}">Name</label>
+              <input id="instrument-name-{{ i.id }}" name="name" required
+                     autocomplete="off" value="{{ values.name }}">
+            </div>
+            <div style="flex:0 0 6rem">
+              <label for="instrument-slots-{{ i.id }}">Slots</label>
+              <input id="instrument-slots-{{ i.id }}" name="slots" inputmode="numeric"
+                     value="{{ values.slots }}">
+            </div>
+          </div>
+          <div class="row" style="margin-top:.6rem">
+            <button type="submit" style="flex:1">Save</button>
+            <button type="reset" class="secondary" data-cancel-edit
+                    style="flex:0 0 auto">Cancel</button>
+          </div>
+        </form>
+      </details>
+
+      {% if i.modes %}
+        {% for m in i.modes %}
+          {% set procedure_edit_open = edit_mode_for == m.id %}
+          <div class="mode-entry" id="procedure-{{ m.id }}">
+            <div style="display:flex;align-items:center;justify-content:space-between">
+              <strong style="flex:1">{{ m.name }}
+                <span class="kind-badge">{{ m.kind }}</span></strong>
+              <div style="display:flex;gap:.3rem;align-items:center">
+                <div class="reorder-buttons">
+                  <form method="post" style="display:inline-block;margin:0"
+                        action="/instruments/{{ i.id }}/procedures/{{ m.id }}/move">
+                    <input type="hidden" name="direction" value="up">
+                    <button type="submit" class="icon-sm" {% if loop.first %}disabled{% endif %}
+                            title="Move up" aria-label="Move {{ m.name }} up">{{ icon(name="move-up") | safe }}</button>
+                  </form>
+                  <form method="post" style="display:inline-block;margin:0"
+                        action="/instruments/{{ i.id }}/procedures/{{ m.id }}/move">
+                    <input type="hidden" name="direction" value="down">
+                    <button type="submit" class="icon-sm" {% if loop.last %}disabled{% endif %}
+                            title="Move down" aria-label="Move {{ m.name }} down">{{ icon(name="move-down") | safe }}</button>
+                  </form>
+                </div>
+                <button type="button" class="icon-sm" data-toggle-details
+                        data-target="#procedure-edit-{{ m.id }}"
+                        title="Edit {{ m.name }}" aria-label="Edit {{ m.name }}">{{ icon(name="edit") | safe }}</button>
+                <form method="post"
+                      style="display:inline-block;margin:0"
+                      action="/instruments/{{ i.id }}/procedures/{{ m.id }}/delete"
+                      data-confirm="Delete the {{ m.name }} procedure?">
+                  <button type="submit" class="icon-sm danger"
+                          title="Delete {{ m.name }}" aria-label="Delete {{ m.name }}">{{ icon(name="delete") | safe }}</button>
+                </form>
+              </div>
+            </div>
+            {% if m.details %}
+              <div class="markdown">{{ m.details | markdown | safe }}</div>
+            {% else %}
+              <p class="muted" style="font-size:.85rem;margin:.4rem 0 0">No details yet.</p>
+            {% endif %}
+
+            <details class="edit-disclosure" id="procedure-edit-{{ m.id }}"
+                      {% if procedure_edit_open %}open{% endif %}>
+              <summary style="display:none"></summary>
+              <form method="post" action="/instruments/{{ i.id }}/procedures/{{ m.id }}/edit"
+                    data-cancel-target>
+                {% if edit_mode_error and edit_mode_for == m.id %}
+                  <p class="flash err">{{ edit_mode_error }}</p>
+                {% endif %}
+                {% if edit_mode_for == m.id %}{% set values = edit_mode_values %}{% else %}{% set values = m %}{% endif %}
+                <div class="row">
+                  <div style="flex:1">
+                    <label for="procedure-name-{{ m.id }}">Name</label>
+                    <input id="procedure-name-{{ m.id }}" name="name" required
+                           autocomplete="off" value="{{ values.name }}">
+                  </div>
+                  <div style="flex:0 0 auto">
+                    <label for="procedure-kind-{{ m.id }}">Used for</label>
+                    <select id="procedure-kind-{{ m.id }}" name="kind">
+                      {% for value in procedure_kinds %}
+                        <option value="{{ value }}"
+                          {% if value == values.kind %}selected{% endif %}>{{ value }}</option>
+                      {% endfor %}
+                    </select>
+                  </div>
+                </div>
+
+                <label for="procedure-details-{{ m.id }}">Details</label>
+                <div class="md-editor" data-markdown-editor>
+                  <div class="md-toolbar" role="toolbar" aria-label="Formatting">
+                    <button type="button" data-md="bold" title="Bold"><strong>B</strong></button>
+                    <button type="button" data-md="italic" title="Italic"><em>I</em></button>
+                    <button type="button" data-md="underline" title="Underline"><u>U</u></button>
+                    <button type="button" data-md="strike" title="Strikethrough"><s>S</s></button>
+                    <button type="button" data-md="heading" title="Heading">H</button>
+                    <button type="button" data-md="ul" title="Bulleted list">&bull;&nbsp;List</button>
+                    <button type="button" data-md="ol" title="Numbered list">1.&nbsp;List</button>
+                    <button type="button" data-md="table" title="Table">Table</button>
+                    <button type="button" data-md="link" title="Link">Link</button>
+                    <button type="button" data-md="image" title="Image">Image</button>
+                    <span class="md-spacer"></span>
+                    <button type="button" class="md-preview-toggle"
+                            data-md-preview-toggle>Preview</button>
+                  </div>
+                  <textarea id="procedure-details-{{ m.id }}" name="details"
+                            rows="4">{{ values.details }}</textarea>
+                  <div class="md-preview markdown" hidden></div>
+                </div>
+
+                <label style="margin-top:1rem">Fields to show</label>
+                <p class="muted" style="font-size:.85rem;margin:.2rem 0 .6rem">
+                  Select which fields are available and required for this procedure.</p>
+                <div style="display:grid;gap:.5rem">
+                  {% if values.kind == "analysed" %}
+                    <div style="display:flex;gap:1rem;align-items:center">
+                      <span style="min-width:10rem;font-size:.9rem">Capacity (mAh)</span>
+                      <label style="display:inline-flex;align-items:center;gap:.3rem;margin:0">
+                        <input type="checkbox" name="field_capacity_mah_visible"
+                               {% if values.fields.capacity_mah.visible %}checked{% endif %}>
+                        <span style="font-size:.85rem">Visible</span>
+                      </label>
+                      <label style="display:inline-flex;align-items:center;gap:.3rem;margin:0">
+                        <input type="checkbox" name="field_capacity_mah_required"
+                               {% if values.fields.capacity_mah.required %}checked{% endif %}>
+                        <span style="font-size:.85rem">Required</span>
+                      </label>
+                    </div>
+                    <div style="display:flex;gap:1rem;align-items:center">
+                      <span style="min-width:10rem;font-size:.9rem">Resistance (mΩ)</span>
+                      <label style="display:inline-flex;align-items:center;gap:.3rem;margin:0">
+                        <input type="checkbox" name="field_ir_mohm_visible"
+                               {% if values.fields.ir_mohm.visible %}checked{% endif %}>
+                        <span style="font-size:.85rem">Visible</span>
+                      </label>
+                      <label style="display:inline-flex;align-items:center;gap:.3rem;margin:0">
+                        <input type="checkbox" name="field_ir_mohm_required"
+                               {% if values.fields.ir_mohm.required %}checked{% endif %}>
+                        <span style="font-size:.85rem">Required</span>
+                      </label>
+                    </div>
+                  {% endif %}
+                  <div style="display:flex;gap:1rem;align-items:center">
+                    <span style="min-width:10rem;font-size:.9rem">Discharge (mA)</span>
+                    <label style="display:inline-flex;align-items:center;gap:.3rem;margin:0">
+                      <input type="checkbox" name="field_discharge_ma_visible"
+                             {% if values.fields.discharge_ma.visible %}checked{% endif %}>
+                      <span style="font-size:.85rem">Visible</span>
+                    </label>
+                    <label style="display:inline-flex;align-items:center;gap:.3rem;margin:0">
+                      <input type="checkbox" name="field_discharge_ma_required"
+                             {% if values.fields.discharge_ma.required %}checked{% endif %}>
+                      <span style="font-size:.85rem">Required</span>
+                    </label>
+                  </div>
+                  <div style="display:flex;gap:1rem;align-items:center">
+                    <span style="min-width:10rem;font-size:.9rem">Charge (mA)</span>
+                    <label style="display:inline-flex;align-items:center;gap:.3rem;margin:0">
+                      <input type="checkbox" name="field_charge_ma_visible"
+                             {% if values.fields.charge_ma.visible %}checked{% endif %}>
+                      <span style="font-size:.85rem">Visible</span>
+                    </label>
+                    <label style="display:inline-flex;align-items:center;gap:.3rem;margin:0">
+                      <input type="checkbox" name="field_charge_ma_required"
+                             {% if values.fields.charge_ma.required %}checked{% endif %}>
+                      <span style="font-size:.85rem">Required</span>
+                    </label>
+                  </div>
+                  <div style="display:flex;gap:1rem;align-items:center">
+                    <span style="min-width:10rem;font-size:.9rem">Notes</span>
+                    <label style="display:inline-flex;align-items:center;gap:.3rem;margin:0">
+                      <input type="checkbox" name="field_notes_visible"
+                             {% if values.fields.notes.visible %}checked{% endif %}>
+                      <span style="font-size:.85rem">Visible</span>
+                    </label>
+                    <label style="display:inline-flex;align-items:center;gap:.3rem;margin:0">
+                      <input type="checkbox" name="field_notes_required"
+                             {% if values.fields.notes.required %}checked{% endif %}>
+                      <span style="font-size:.85rem">Required</span>
+                    </label>
+                  </div>
+                </div>
+
+                <div class="row" style="margin-top:.6rem;align-items:center">
+                  <button type="submit" style="flex:1">Save</button>
+                  <button type="reset" class="secondary" data-cancel-edit
+                          style="flex:0 0 auto">Cancel</button>
+                </div>
+              </form>
+            </details>
+          </div>
+        {% endfor %}
+      {% else %}
+        <p class="flash warn" style="margin-top:.8rem">This instrument has no
+           procedures yet, so it can't be chosen when adding a reading. Add
+           one below.</p>
+      {% endif %}
+
+      <details class="add-disclosure" style="margin-top:.8rem"
+                {% if (add_mode_error and add_mode_for == i.id) %}open{% endif %}>
+        <summary class="btn-summary">Add a procedure</summary>
+        <div class="mode-entry">
+          {% if add_mode_error and add_mode_for == i.id %}
+            <p class="flash err">{{ add_mode_error }}</p>
+          {% endif %}
+          {% if add_mode_for == i.id %}{% set new_values = add_mode_values %}{% else %}{% set new_values = empty_mode_values %}{% endif %}
+          <form method="post" action="/instruments/{{ i.id }}/procedures/add">
+            <div class="row" style="align-items:flex-end">
+              <div style="flex:1">
+                <label for="new-procedure-name-{{ i.id }}">Name</label>
+                <input id="new-procedure-name-{{ i.id }}" name="name" required
+                       autocomplete="off" placeholder="e.g. Refresh &amp; Analyze"
+                       value="{{ new_values.name }}">
+              </div>
+              <div style="flex:0 0 auto">
+                <label for="new-procedure-kind-{{ i.id }}">Used for</label>
+                <select id="new-procedure-kind-{{ i.id }}" name="kind">
+                  {% for value in procedure_kinds %}
+                    <option value="{{ value }}"
+                      {% if value == new_values.kind %}selected{% endif %}>{{ value }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+            </div>
+            <label for="new-procedure-details-{{ i.id }}" style="display:block;margin-top:.6rem">
+              Details</label>
+            <div class="md-editor" data-markdown-editor>
+              <div class="md-toolbar" role="toolbar" aria-label="Formatting">
+                <button type="button" data-md="bold" title="Bold"><strong>B</strong></button>
+                <button type="button" data-md="italic" title="Italic"><em>I</em></button>
+                <button type="button" data-md="underline" title="Underline"><u>U</u></button>
+                <button type="button" data-md="strike" title="Strikethrough"><s>S</s></button>
+                <button type="button" data-md="heading" title="Heading">H</button>
+                <button type="button" data-md="ul" title="Bulleted list">&bull;&nbsp;List</button>
+                <button type="button" data-md="ol" title="Numbered list">1.&nbsp;List</button>
+                <button type="button" data-md="table" title="Table">Table</button>
+                <button type="button" data-md="link" title="Link">Link</button>
+                <button type="button" data-md="image" title="Image">Image</button>
+                <span class="md-spacer"></span>
+                <button type="button" class="md-preview-toggle"
+                        data-md-preview-toggle>Preview</button>
+              </div>
+              <textarea id="new-procedure-details-{{ i.id }}" name="details"
+                        rows="4" placeholder="steps, settings, anything worth remembering next time">{{ new_values.details }}</textarea>
+              <div class="md-preview markdown" hidden></div>
+            </div>
+
+            <label style="margin-top:1rem">Fields to show</label>
+            <p class="muted" style="font-size:.85rem;margin:.2rem 0 .6rem">
+              Select which fields are available and required for this procedure.</p>
+            <div style="display:grid;gap:.5rem" data-kind-fields>
+              <div style="display:flex;gap:1rem;align-items:center" data-field-kind="analysed">
+                <span style="min-width:10rem;font-size:.9rem">Capacity (mAh)</span>
+                <label style="display:inline-flex;align-items:center;gap:.3rem;margin:0">
+                  <input type="checkbox" name="field_capacity_mah_visible" checked>
+                  <span style="font-size:.85rem">Visible</span>
+                </label>
+                <label style="display:inline-flex;align-items:center;gap:.3rem;margin:0">
+                  <input type="checkbox" name="field_capacity_mah_required">
+                  <span style="font-size:.85rem">Required</span>
+                </label>
+              </div>
+              <div style="display:flex;gap:1rem;align-items:center" data-field-kind="analysed">
+                <span style="min-width:10rem;font-size:.9rem">Resistance (mΩ)</span>
+                <label style="display:inline-flex;align-items:center;gap:.3rem;margin:0">
+                  <input type="checkbox" name="field_ir_mohm_visible" checked>
+                  <span style="font-size:.85rem">Visible</span>
+                </label>
+                <label style="display:inline-flex;align-items:center;gap:.3rem;margin:0">
+                  <input type="checkbox" name="field_ir_mohm_required">
+                  <span style="font-size:.85rem">Required</span>
+                </label>
+              </div>
+              <div style="display:flex;gap:1rem;align-items:center">
+                <span style="min-width:10rem;font-size:.9rem">Discharge (mA)</span>
+                <label style="display:inline-flex;align-items:center;gap:.3rem;margin:0">
+                  <input type="checkbox" name="field_discharge_ma_visible" checked>
+                  <span style="font-size:.85rem">Visible</span>
+                </label>
+                <label style="display:inline-flex;align-items:center;gap:.3rem;margin:0">
+                  <input type="checkbox" name="field_discharge_ma_required">
+                  <span style="font-size:.85rem">Required</span>
+                </label>
+              </div>
+              <div style="display:flex;gap:1rem;align-items:center">
+                <span style="min-width:10rem;font-size:.9rem">Charge (mA)</span>
+                <label style="display:inline-flex;align-items:center;gap:.3rem;margin:0">
+                  <input type="checkbox" name="field_charge_ma_visible" checked>
+                  <span style="font-size:.85rem">Visible</span>
+                </label>
+                <label style="display:inline-flex;align-items:center;gap:.3rem;margin:0">
+                  <input type="checkbox" name="field_charge_ma_required">
+                  <span style="font-size:.85rem">Required</span>
+                </label>
+              </div>
+              <div style="display:flex;gap:1rem;align-items:center">
+                <span style="min-width:10rem;font-size:.9rem">Notes</span>
+                <label style="display:inline-flex;align-items:center;gap:.3rem;margin:0">
+                  <input type="checkbox" name="field_notes_visible" checked>
+                  <span style="font-size:.85rem">Visible</span>
+                </label>
+                <label style="display:inline-flex;align-items:center;gap:.3rem;margin:0">
+                  <input type="checkbox" name="field_notes_required">
+                  <span style="font-size:.85rem">Required</span>
+                </label>
+              </div>
+            </div>
+
+            <button type="submit" class="wide" style="margin-top:.6rem">Add procedure</button>
+          </form>
+        </div>
+      </details>
+    </div>
+  {% endfor %}
+{% endblock content %}

@@ -1,0 +1,101 @@
+<dialog id="dlg-measure" class="wide" {% if open_dialog == "measure" %}open{% endif %}>
+  <button type="button" class="dlg-close" aria-label="Close">&times;</button>
+  <h2>Record a reading</h2>
+  <p class="sub">A purchase is a date and nothing else. A charge records the
+     state a cell reached. Only an analysis produces a capacity, because only an
+     analysis discharges the cell and counts what comes out.</p>
+
+  {% if measure_error %}<p class="flash err">{{ measure_error }}</p>{% endif %}
+
+  <form method="post" action="/b/{{ battery.id }}/measure" data-kind-scope>
+    <div class="row">
+      <div>
+        <label for="kind">Kind</label>
+        <select id="kind" name="kind" data-kind-select>
+          {% set selected_kind = measure.kind | default(value="analysed") %}
+          {% for value in kinds %}
+            <option value="{{ value }}"
+              {% if value == selected_kind %}selected{% endif %}>{{ value | title_case }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label for="measured_at">Date</label>
+        <input id="measured_at" name="measured_at" type="date"
+               value="{{ measure.measured_at | default(value=today) }}">
+      </div>
+    </div>
+
+    <div class="row" data-kinds="charged analysed">
+      <div>
+        <label for="instrument">Instrument</label>
+        <select id="instrument" name="instrument_id" data-modes-target="#mode"
+                data-kind-filter="#kind">
+          <option value="">Select an instrument&hellip;</option>
+          {% for i in instruments %}
+            <option value="{{ i.id }}"
+                    data-modes='{{ i.modes | json_encode }}'
+                    {% if i.id == measure.instrument_id %}selected{% endif %}>
+              {{ i.name }}</option>
+          {% endfor %}
+        </select>
+        {% if not instruments %}
+          <p class="muted" style="font-size:.8rem;margin:.3rem 0 0">
+            None registered yet. <a href="/instruments">Add one</a>.</p>
+        {% endif %}
+      </div>
+      <div>
+        <label for="mode">Procedure</label>
+        <select id="mode" name="mode_id"
+                data-selected="{{ measure.mode_id | default(value="") }}">
+          <option value="">Select a procedure&hellip;</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="row" data-kinds="charged analysed" data-procedure-fields hidden>
+      <div data-field="capacity_mah">
+        <label for="capacity_mah">Capacity (mAh)</label>
+        <input id="capacity_mah" name="capacity_mah" inputmode="numeric"
+               autocomplete="off" placeholder="e.g. 850"
+               value="{{ measure.capacity_mah | default(value="") }}">
+      </div>
+      <div data-field="ir_mohm">
+        <label for="ir_mohm">Resistance (mΩ)</label>
+        <input id="ir_mohm" name="ir_mohm" inputmode="numeric"
+               autocomplete="off" placeholder="e.g. 32"
+               value="{{ measure.ir_mohm | default(value="") }}">
+      </div>
+      <div data-field="discharge_ma">
+        <label for="discharge_ma">Discharge (mA)</label>
+        <input id="discharge_ma" name="discharge_ma" inputmode="numeric"
+               autocomplete="off" placeholder="e.g. 500"
+               value="{{ measure.discharge_ma | default(value="") }}">
+      </div>
+      <div data-field="charge_ma">
+        <label for="charge_ma">Charge (mA)</label>
+        <input id="charge_ma" name="charge_ma" inputmode="numeric"
+               autocomplete="off" placeholder="e.g. 1000"
+               value="{{ measure.charge_ma | default(value="") }}">
+      </div>
+    </div>
+
+    <div data-kinds="charged analysed" data-field="notes" data-procedure-fields hidden>
+      <label for="measure_notes">Notes</label>
+      <input id="measure_notes" name="notes" autocomplete="off"
+             placeholder="anything unusual about this run"
+             value="{{ measure.notes | default(value="") }}">
+    </div>
+
+    <p class="muted" style="font-size:.85rem;margin:.7rem 0 0"
+       data-kinds="charged analysed">A capacity needs the discharge current it
+       was measured at, and any reading needs the instrument it came from. Both
+       are refused without them, because a figure that does not say how it was
+       produced cannot be compared with the next one and is worse than no figure
+       at all.</p>
+    <p class="muted" style="font-size:.85rem;margin:.7rem 0 0"
+       data-kinds="bought">A purchase records only the date this cell entered
+       service, so there is nothing else to fill in.</p>
+    <button type="submit" class="wide">Save reading</button>
+  </form>
+</dialog>
