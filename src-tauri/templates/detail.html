@@ -207,7 +207,14 @@
       <table>
         {% for move in history %}
           <tr><td>{{ move.location }}</td>
-              <td class="muted">{{ move.moved_at | date10 }}</td></tr>
+              <td class="muted">{{ move.moved_at | date10 }}</td>
+              <td class="row-actions">
+                <form method="post" action="/history/{{ move.id }}/delete"
+                      data-confirm="Delete this location entry? The battery's current location is not changed.">
+                  <button type="submit" class="icon-sm danger"
+                          title="Delete this location entry" aria-label="Delete this location entry">{{ icon(name="delete") | safe }}</button>
+                </form>
+              </td></tr>
         {% endfor %}
       </table>
     {% else %}

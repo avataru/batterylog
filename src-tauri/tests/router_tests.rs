@@ -435,3 +435,295 @@ fn adding_a_battery_without_print_in_pdf_mode_does_not_mention_save_pdf_ids() {
     let query = query.unwrap_or_default();
     assert!(!query.contains("save_pdf_ids"), "print wasn't requested, so no PDF should be triggered: {query:?}");
 }
+
+// ── Battery matching ─────────────────────────────────────────────────────
+
+fn seed_pool_battery(state: &AppState, id: i64, brand: &str, capacity_mah: i64, ir_mohm: Option<i64>) {
+    let db = state.db.lock().unwrap();
+    db.create(id, "AA", Some(2000), brand, "storage", "").unwrap();
+    db.add_measurement(id, "analysed", "2026-01-01", Some(capacity_mah), ir_mohm, None, None, Some(500), None, "")
+        .unwrap();
+}
+
+#[test]
+fn match_page_renders_with_no_pool_batteries() {
+    let (_dir, state) = fresh_state();
+    let html = expect_page(router::render_page(&state, "/match", ""));
+    assert!(html.contains("Match batteries"));
+    assert!(html.contains("storage"), "should name the default pool location: {html}");
+}
+
+#[test]
+fn match_preview_suggests_the_weakest_cells_for_a_low_draw_request() {
+    let (_dir, state) = fresh_state();
+    seed_pool_battery(&state, 1, "Eneloop", 1900, Some(80));
+    seed_pool_battery(&state, 2, "Eneloop", 1200, Some(200));
+    seed_pool_battery(&state, 3, "Eneloop", 1950, Some(70));
+
+    let html = expect_page(router::submit_form(
+        &state,
+        "/match",
+        &fields(&[("type", "AA"), ("count", "1"), ("draw", "low"), ("location", "Torch")]),
+    ));
+
+    assert!(html.contains(">002<"), "the weakest cell (002) should be suggested: {html}");
+    // Nothing should have moved yet — this is only a preview.
+    assert_eq!(state.db.lock().unwrap().get(2).unwrap().unwrap().location, "storage");
+}
+
+#[test]
+fn match_confirm_moves_the_suggested_batteries_and_logs_the_match() {
+    let (_dir, state) = fresh_state();
+    seed_pool_battery(&state, 1, "Eneloop", 1900, Some(80));
+    seed_pool_battery(&state, 2, "Eneloop", 1850, Some(90));
+    seed_pool_battery(&state, 3, "Duracell", 1950, Some(70));
+
+    let (path, query) = expect_redirect(router::submit_form(
+        &state,
+        "/match",
+        &fields(&[
+            ("type", "AA"), ("count", "2"), ("draw", "low"), ("location", "Torch"), ("confirm", "yes"),
+        ]),
+    ));
+    assert_eq!(path, "/match");
+    assert!(query.unwrap_or_default().contains("msg="));
+
+    // The single-brand (Eneloop) bucket is sufficient, so 1 and 2 (not the
+    // Duracell) should have moved.
+    let db = state.db.lock().unwrap();
+    assert_eq!(db.get(1).unwrap().unwrap().location, "Torch");
+    assert_eq!(db.get(2).unwrap().unwrap().location, "Torch");
+    assert_eq!(db.get(3).unwrap().unwrap().location, "storage");
+
+    let matches = db.list_matches().unwrap();
+    assert_eq!(matches.len(), 1);
+    assert_eq!(matches[0].location, "Torch");
+    assert_eq!(matches[0].requested_type, "AA");
+    assert_eq!(matches[0].draw, "low");
+    assert!(matches[0].returned_at.is_none());
+    let mut ids = matches[0].battery_ids.clone();
+    ids.sort();
+    assert_eq!(ids, vec![1, 2]);
+}
+
+#[test]
+fn match_confirm_reports_an_error_instead_of_moving_anything_when_the_pool_is_short() {
+    let (_dir, state) = fresh_state();
+    seed_pool_battery(&state, 1, "Eneloop", 1900, Some(80));
+
+    let html = expect_page(router::submit_form(
+        &state,
+        "/match",
+        &fields(&[("type", "AA"), ("count", "3"), ("draw", "low"), ("location", "Torch")]),
+    ));
+
+    assert!(html.contains("Only 1"), "should explain the shortfall: {html}");
+    assert_eq!(state.db.lock().unwrap().list_matches().unwrap().len(), 0);
+}
+
+#[test]
+fn a_matched_battery_returning_to_storage_by_any_path_closes_out_its_match() {
+    let (_dir, state) = fresh_state();
+    seed_pool_battery(&state, 1, "Eneloop", 1900, Some(80));
+
+    router::submit_form(
+        &state,
+        "/match",
+        &fields(&[
+            ("type", "AA"), ("count", "1"), ("draw", "low"), ("location", "Torch"), ("confirm", "yes"),
+        ]),
+    );
+    let match_id = state.db.lock().unwrap().list_matches().unwrap()[0].id;
+
+    // Moved via the single-battery location form, not a dedicated "return"
+    // action — the close-out has to fire from every location-change path.
+    router::submit_form(&state, "/b/1/location", &fields(&[("location", "Storage")]));
+
+    let matches = state.db.lock().unwrap().list_matches().unwrap();
+    assert_eq!(matches[0].id, match_id);
+    assert!(matches[0].returned_at.is_some(), "should be closed out once battery 1 is back in the pool");
+}
+
+fn match_three_to_torch(state: &AppState) {
+    for id in 1..=3 {
+        seed_pool_battery(state, id, "Eneloop", 1900, Some(80));
+    }
+    router::submit_form(
+        state,
+        "/match",
+        &fields(&[
+            ("type", "AA"), ("count", "3"), ("draw", "low"), ("location", "Torch"), ("confirm", "yes"),
+        ]),
+    );
+}
+
+#[test]
+fn returning_one_battery_of_a_match_returns_the_whole_set() {
+    let (_dir, state) = fresh_state();
+    match_three_to_torch(&state);
+
+    let (_, query) = expect_redirect(router::submit_form(&state, "/b/2/location", &fields(&[("location", "storage")])));
+
+    let query = query.unwrap_or_default();
+    assert!(query.contains("001") && query.contains("003"), "should say which batteries came back too: {query:?}");
+    let db = state.db.lock().unwrap();
+    for id in 1..=3 {
+        assert_eq!(db.get(id).unwrap().unwrap().location, "storage", "battery {id} should be back in the pool");
+        assert_eq!(db.history(id).unwrap()[0].location, "storage", "battery {id} should get its own history entry");
+    }
+    assert!(db.list_matches().unwrap()[0].returned_at.is_some());
+}
+
+#[test]
+fn returning_a_whole_set_by_batch_does_not_double_report_it() {
+    let (_dir, state) = fresh_state();
+    match_three_to_torch(&state);
+
+    let (_, query) = expect_redirect(router::submit_form(
+        &state,
+        "/batch/location",
+        &fields(&[("spec", "1-3"), ("location", "storage")]),
+    ));
+
+    let query = query.unwrap_or_default();
+    assert!(!query.contains("Also+returned") && !query.contains("Also%20returned"), "every battery was in the batch: {query:?}");
+    let db = state.db.lock().unwrap();
+    for id in 1..=3 {
+        assert_eq!(db.get(id).unwrap().unwrap().location, "storage");
+        let history = db.history(id).unwrap();
+        assert_eq!(history.iter().filter(|h| h.location == "storage").count(), 2, "one original + one return, no duplicate entry");
+    }
+}
+
+#[test]
+fn a_battery_already_moved_elsewhere_still_returns_with_its_set() {
+    let (_dir, state) = fresh_state();
+    match_three_to_torch(&state);
+    router::submit_form(&state, "/b/3/location", &fields(&[("location", "Drawer")]));
+
+    router::submit_form(&state, "/b/1/location", &fields(&[("location", "storage")]));
+
+    let db = state.db.lock().unwrap();
+    assert_eq!(db.get(3).unwrap().unwrap().location, "storage");
+}
+
+#[test]
+fn return_button_moves_the_whole_set_back_and_closes_the_match() {
+    let (_dir, state) = fresh_state();
+    match_three_to_torch(&state);
+    router::submit_form(&state, "/b/3/location", &fields(&[("location", "Drawer")]));
+    let match_id = state.db.lock().unwrap().list_matches().unwrap()[0].id;
+
+    let (path, query) = expect_redirect(router::submit_form(&state, &format!("/match/{match_id}/return"), &fields(&[])));
+
+    assert_eq!(path, "/match/log");
+    assert!(query.unwrap_or_default().contains("001%2C+002%2C+003"), "should list every battery returned");
+    let db = state.db.lock().unwrap();
+    for id in 1..=3 {
+        assert_eq!(db.get(id).unwrap().unwrap().location, "storage");
+    }
+    assert!(db.list_matches().unwrap()[0].returned_at.is_some());
+}
+
+#[test]
+fn match_log_shows_an_in_use_pill_and_return_button_only_for_open_matches() {
+    let (_dir, state) = fresh_state();
+    match_three_to_torch(&state);
+
+    let open = expect_page(router::render_page(&state, "/match/log", ""));
+    assert!(open.contains("In use in <strong>Torch</strong>"), "{open}");
+    assert!(open.contains("/return\""), "an open match should offer Return");
+    assert!(
+        !open.contains("<title>"),
+        "an icon's own <title> overrides the button's tooltip, so none should be embedded"
+    );
+
+    let match_id = state.db.lock().unwrap().list_matches().unwrap()[0].id;
+    router::submit_form(&state, &format!("/match/{match_id}/return"), &fields(&[]));
+
+    let closed = expect_page(router::render_page(&state, "/match/log", ""));
+    assert!(!closed.contains("In use in"));
+    assert!(!closed.contains("/return\""), "a returned match has nothing left to return");
+}
+
+#[test]
+fn match_log_page_renders_past_matches() {
+    let (_dir, state) = fresh_state();
+    seed_pool_battery(&state, 1, "Eneloop", 1900, Some(80));
+    router::submit_form(
+        &state,
+        "/match",
+        &fields(&[
+            ("type", "AA"), ("count", "1"), ("draw", "low"), ("location", "Torch"), ("confirm", "yes"),
+        ]),
+    );
+
+    let html = expect_page(router::render_page(&state, "/match/log", ""));
+    assert!(html.contains("Torch"));
+    assert!(html.contains(">001<"));
+}
+
+#[test]
+fn deleting_a_match_leaves_its_batteries_where_they_are() {
+    let (_dir, state) = fresh_state();
+    seed_pool_battery(&state, 1, "Eneloop", 1900, Some(80));
+    router::submit_form(
+        &state,
+        "/match",
+        &fields(&[
+            ("type", "AA"), ("count", "1"), ("draw", "low"), ("location", "Torch"), ("confirm", "yes"),
+        ]),
+    );
+    let match_id = state.db.lock().unwrap().list_matches().unwrap()[0].id;
+
+    let (path, _) = expect_redirect(router::submit_form(&state, &format!("/match/{match_id}/delete"), &fields(&[])));
+
+    assert_eq!(path, "/match/log");
+    let db = state.db.lock().unwrap();
+    assert!(db.list_matches().unwrap().is_empty());
+    assert_eq!(db.get(1).unwrap().unwrap().location, "Torch", "no cascade: the battery stays put");
+    assert_eq!(db.history(1).unwrap().len(), 2, "no cascade: location history is untouched");
+}
+
+#[test]
+fn deleting_a_location_entry_keeps_the_current_location_and_any_match() {
+    let (_dir, state) = fresh_state();
+    seed_pool_battery(&state, 1, "Eneloop", 1900, Some(80));
+    router::submit_form(
+        &state,
+        "/match",
+        &fields(&[
+            ("type", "AA"), ("count", "1"), ("draw", "low"), ("location", "Torch"), ("confirm", "yes"),
+        ]),
+    );
+    let newest = state.db.lock().unwrap().history(1).unwrap()[0].clone();
+    assert_eq!(newest.location, "Torch");
+
+    let (path, _) = expect_redirect(router::submit_form(&state, &format!("/history/{}/delete", newest.id), &fields(&[])));
+
+    assert_eq!(path, "/b/1");
+    let db = state.db.lock().unwrap();
+    let history = db.history(1).unwrap();
+    assert_eq!(history.len(), 1);
+    assert_eq!(history[0].location, "storage");
+    assert_eq!(db.get(1).unwrap().unwrap().location, "Torch", "current location is not rewound");
+    assert_eq!(db.list_matches().unwrap().len(), 1, "no cascade: the match stays in the log");
+}
+
+#[test]
+fn battery_page_and_match_log_offer_delete_buttons() {
+    let (_dir, state) = fresh_state();
+    seed_pool_battery(&state, 1, "Eneloop", 1900, Some(80));
+    router::submit_form(
+        &state,
+        "/match",
+        &fields(&[
+            ("type", "AA"), ("count", "1"), ("draw", "low"), ("location", "Torch"), ("confirm", "yes"),
+        ]),
+    );
+
+    let detail = expect_page(router::render_page(&state, "/b/1", ""));
+    assert!(detail.contains("/history/") && detail.contains("Delete this location entry"));
+    let log = expect_page(router::render_page(&state, "/match/log", ""));
+    assert!(log.contains("/delete") && log.contains("Delete this match"));
+}

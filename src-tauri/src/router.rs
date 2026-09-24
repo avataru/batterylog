@@ -8,7 +8,7 @@
 use std::collections::{BTreeMap, HashMap};
 
 use batteries_core::db::{Battery, Db};
-use batteries_core::{config, health, labels};
+use batteries_core::{config, health, labels, matching};
 use serde::Serialize;
 use serde_json::{json, Value};
 
@@ -103,6 +103,10 @@ fn page(
     }
 }
 
+fn id_list(ids: &[i64]) -> String {
+    ids.iter().map(|i| format!("{i:03}")).collect::<Vec<_>>().join(", ")
+}
+
 fn today() -> String {
     chrono::Local::now().format("%Y-%m-%d").to_string()
 }
@@ -141,6 +145,8 @@ pub fn render_page(state: &AppState, path: &str, query: &str) -> CommandResult {
         ["settings"] => page_settings(state, &msg, &error, None),
         ["batch", "measure"] => page_batch_measure(state, &msg, &error, None),
         ["batch", "location"] => page_batch_location(state, &q, &msg, &error, None),
+        ["match"] => page_match(state, &msg, &error, None),
+        ["match", "log"] => page_match_log(state, &msg, &error),
         ["b", id] => {
             if let Ok(id) = id.parse::<i64>() {
                 page_detail(state, id, &q, &msg, &error)
@@ -527,6 +533,36 @@ fn page_batch_location(state: &AppState, _q: &HashMap<String, String>, msg: &str
     page(state, "batch_location.html", ctx, "Batch change location", msg, error, "")
 }
 
+fn page_match(state: &AppState, msg: &str, error: &str, extra: Option<Value>) -> CommandResult {
+    let db = state.db.lock().unwrap();
+    let types = db.distinct("type").unwrap_or_default();
+    let locations = db.distinct("location").unwrap_or_default();
+    let top_locations = db.popular("location", 8).unwrap_or_default();
+    let pool_location = config::get(&db, "pool_location").as_text();
+    drop(db);
+
+    let mut ctx = json!({
+        "types": types, "locations": locations, "top_locations": top_locations,
+        "pool_location": pool_location,
+        "match_type": "", "match_count": "", "match_draw": "low", "match_location": "",
+        "page_error": "",
+        "suggestion": Value::Null,
+    });
+    if let (Some(extra), Value::Object(map)) = (extra, &mut ctx) {
+        if let Value::Object(extra_map) = extra { for (k, v) in extra_map { map.insert(k, v); } }
+    }
+    page(state, "match.html", ctx, "Match batteries", msg, error, "")
+}
+
+fn page_match_log(state: &AppState, msg: &str, error: &str) -> CommandResult {
+    let db = state.db.lock().unwrap();
+    let matches = db.list_matches().unwrap_or_default();
+    let pool_location = config::get(&db, "pool_location").as_text();
+    drop(db);
+    let ctx = json!({ "matches": matches, "pool_location": pool_location });
+    page(state, "match_log.html", ctx, "Match log", msg, error, "")
+}
+
 fn page_detail(state: &AppState, id: i64, q: &HashMap<String, String>, msg: &str, error: &str) -> CommandResult {
     let db = state.db.lock().unwrap();
     let battery = match db.get(id).unwrap_or(None) {
@@ -597,6 +633,10 @@ pub fn submit_form(state: &AppState, path: &str, fields: &HashMap<String, String
         ["instruments", iid, "procedures", mid, "move"] => submit_mode_move(state, iid, mid, fields),
         ["batch", "measure"] => submit_batch_measure(state, fields),
         ["batch", "location"] => submit_batch_location(state, fields),
+        ["match"] => submit_match(state, fields),
+        ["match", id, "delete"] => submit_delete_match(state, id),
+        ["match", id, "return"] => submit_return_match(state, id),
+        ["history", id, "delete"] => submit_delete_location_entry(state, id),
         ["settings"] => submit_settings(state, fields),
         ["settings", "reset"] => submit_settings_reset(state),
         ["b", id, "location"] => submit_location(state, id, fields),
@@ -784,10 +824,15 @@ fn submit_location(state: &AppState, id: &str, fields: &HashMap<String, String>)
     let Ok(id) = id.parse::<i64>() else { return redirect("/", &[]) };
     let db = state.db.lock().unwrap();
     let location = get_str(fields, "location");
-    match db.set_location(id, location) {
-        Ok(Some(_)) => {
+    let pool_location = config::get(&db, "pool_location").as_text();
+    match db.set_location_checked(id, location, &pool_location) {
+        Ok((Some(_), also_returned)) => {
             drop(db);
-            redirect(format!("/b/{id}"), &[("msg", "Location saved.")])
+            let mut msg = "Location saved.".to_string();
+            if !also_returned.is_empty() {
+                msg.push_str(&format!(" Also returned from the same match: {}.", id_list(&also_returned)));
+            }
+            redirect(format!("/b/{id}"), &[("msg", &msg)])
         }
         _ => redirect(format!("/b/{id}"), &[("error", "Could not save the location.")]),
     }
@@ -962,6 +1007,46 @@ fn submit_delete_measurement(state: &AppState, id: &str, _fields: &HashMap<Strin
             redirect(format!("/b/{battery_id}"), &[("msg", "Reading deleted.")])
         }
         _ => redirect("/", &[]),
+    }
+}
+
+fn submit_delete_location_entry(state: &AppState, id: &str) -> CommandResult {
+    let Ok(id) = id.parse::<i64>() else { return redirect("/", &[]) };
+    let db = state.db.lock().unwrap();
+    match db.delete_location_entry(id) {
+        Ok(Some(battery_id)) => {
+            drop(db);
+            redirect(format!("/b/{battery_id}"), &[("msg", "Location entry deleted.")])
+        }
+        _ => redirect("/", &[]),
+    }
+}
+
+fn submit_delete_match(state: &AppState, id: &str) -> CommandResult {
+    let Ok(id) = id.parse::<i64>() else { return redirect("/match/log", &[]) };
+    let db = state.db.lock().unwrap();
+    let deleted = db.delete_match(id).unwrap_or(false);
+    drop(db);
+    if deleted {
+        redirect("/match/log", &[("msg", "Match deleted.")])
+    } else {
+        redirect("/match/log", &[("error", "That match no longer exists.")])
+    }
+}
+
+fn submit_return_match(state: &AppState, id: &str) -> CommandResult {
+    let Ok(id) = id.parse::<i64>() else { return redirect("/match/log", &[]) };
+    let db = state.db.lock().unwrap();
+    let pool_location = config::get(&db, "pool_location").as_text();
+    let result = db.return_match(id, &pool_location);
+    drop(db);
+    match result {
+        Ok(moved) if moved.is_empty() => redirect("/match/log", &[("msg", "Match closed.")]),
+        Ok(moved) => redirect(
+            "/match/log",
+            &[("msg", &format!("Returned {} to {pool_location}.", id_list(&moved)))],
+        ),
+        Err(_) => redirect("/match/log", &[("error", "Could not return that match.")]),
     }
 }
 
@@ -1195,24 +1280,118 @@ fn submit_batch_location(state: &AppState, fields: &HashMap<String, String>) -> 
         }
     };
 
+    let pool_location = config::get(&db, "pool_location").as_text();
     let mut moved = 0;
     let mut skipped = Vec::new();
-    for id in ids {
+    let mut also_returned: Vec<i64> = Vec::new();
+    for &id in &ids {
         match db.get(id).unwrap_or(None) {
             Some(b) if b.deleted_at.is_none() => {
-                let _ = db.set_location(id, &location);
+                if let Ok((_, others)) = db.set_location_checked(id, &location, &pool_location) {
+                    also_returned.extend(others);
+                }
                 moved += 1;
             }
             _ => skipped.push(id.to_string()),
         }
     }
+    also_returned.retain(|other| !ids.contains(other));
+    also_returned.sort_unstable();
+    also_returned.dedup();
 
     drop(db);
     let mut msg = format!("{moved} batter{} moved.", if moved == 1 { "y" } else { "ies" });
+    if !also_returned.is_empty() {
+        msg.push_str(&format!(" Also returned from the same match: {}.", id_list(&also_returned)));
+    }
     if !skipped.is_empty() {
         msg.push_str(&format!(" Skipped: {}.", skipped.join(", ")));
     }
     redirect("/batch/location", &[("msg", &msg)])
+}
+
+fn submit_match(state: &AppState, fields: &HashMap<String, String>) -> CommandResult {
+    let db = state.db.lock().unwrap();
+    let requested_type = get_str(fields, "type").trim().to_uppercase();
+    let count_text = get_str(fields, "count").to_string();
+    let draw = matching::Draw::parse(get_str(fields, "draw")).unwrap_or(matching::Draw::Low);
+    let location = get_str(fields, "location").trim().to_string();
+    let confirm = get_str(fields, "confirm") == "yes";
+
+    let echo = json!({
+        "match_type": requested_type, "match_count": count_text,
+        "match_draw": draw.as_str(), "match_location": location,
+    });
+
+    if requested_type.is_empty() {
+        drop(db);
+        return page_match(state, "", "Enter a battery type.", Some(echo));
+    }
+    if location.is_empty() {
+        drop(db);
+        return page_match(state, "", "Enter a destination location.", Some(echo));
+    }
+    let count = match parse_positive_int(&count_text) {
+        Some(n) => n as usize,
+        None => {
+            drop(db);
+            return page_match(state, "", "Enter how many batteries you need, as a whole number.", Some(echo));
+        }
+    };
+
+    let pool_location = config::get(&db, "pool_location").as_text();
+    let default_ir = config::get(&db, "default_ir_mohm").as_i64();
+    let all = db.list_batteries("", "", "", "active", "id", None, 0).unwrap_or_default();
+    let mut measurements_by_battery = HashMap::new();
+    for b in all.iter().filter(|b| b.location.eq_ignore_ascii_case(&pool_location)) {
+        measurements_by_battery.insert(b.id, db.measurements(b.id).unwrap_or_default());
+    }
+    let candidates = matching::eligible_pool(&all, &measurements_by_battery, &pool_location, default_ir);
+
+    let suggestion = match matching::suggest(&candidates, &requested_type, count, draw) {
+        Ok(s) => s,
+        Err(e) => {
+            drop(db);
+            return page_match(state, "", &e, Some(echo));
+        }
+    };
+
+    if confirm {
+        let _ = db.create_match(&location, &requested_type, draw.as_str(), &suggestion.battery_ids);
+        drop(db);
+        let n = suggestion.battery_ids.len();
+        return redirect(
+            "/match",
+            &[(
+                "msg",
+                &format!("{n} \"{requested_type}\" batter{} moved to {location}.", if n == 1 { "y" } else { "ies" }),
+            )],
+        );
+    }
+
+    let by_id: HashMap<i64, &matching::Candidate> = candidates.iter().map(|c| (c.battery.id, c)).collect();
+    let rows: Vec<Value> = suggestion
+        .battery_ids
+        .iter()
+        .filter_map(|id| {
+            let c = by_id.get(id)?;
+            Some(json!({
+                "id": c.battery.id, "type": c.battery.r#type, "brand": c.battery.brand,
+                "nominal_mah": c.battery.nominal_mah, "capacity_mah": c.capacity_mah,
+                "ir_mohm": c.ir_mohm, "ir_assumed": c.ir_assumed,
+            }))
+        })
+        .collect();
+
+    drop(db);
+    let mut ctx = echo;
+    if let Value::Object(map) = &mut ctx {
+        map.insert(
+            "suggestion".into(),
+            json!({ "rows": rows, "mixed": suggestion.mixed, "count": suggestion.battery_ids.len() }),
+        );
+    }
+    page_match(state, "", "", Some(ctx))
 }
 
 fn submit_settings(state: &AppState, fields: &HashMap<String, String>) -> CommandResult {

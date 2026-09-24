@@ -234,6 +234,29 @@ pub const SETTINGS: &[SettingSpec] = &[
                reprinting one, and the batch Print page.",
     },
     SettingSpec {
+        key: "pool_location",
+        env: "POOL_LOCATION",
+        default: "storage",
+        kind: Kind::Text,
+        group: "matching",
+        label: "Pool location",
+        help: "The location a battery must be in to be offered up by battery matching. \
+               Compared case-insensitively against a battery's own location.",
+    },
+    SettingSpec {
+        key: "default_ir_mohm",
+        env: "DEFAULT_IR_MOHM",
+        default: "35",
+        kind: Kind::Int { min: 1, max: 5000 },
+        group: "matching",
+        label: "Assumed resistance for cells with no reading (m\u{3a9})",
+        help: "A cell in the pool with a capacity reading but no resistance reading yet still \
+               needs a number to rank it by. This one is used, and the suggestion marks it as \
+               assumed rather than measured. It only needs to sit comfortably under the \
+               resistance limits above, since a new cell's real internal resistance is normally \
+               far lower.",
+    },
+    SettingSpec {
         key: "pdf_layout",
         env: "PDF_LAYOUT",
         default: "pages",
@@ -465,6 +488,11 @@ const GROUPS: &[(&str, &str, &str)] = &[
         "list",
         "The battery list",
         "How the list draws itself. None of this touches the batteries themselves.",
+    ),
+    (
+        "matching",
+        "Battery matching",
+        "How the matcher decides which batteries in the pool location are offered up for a request.",
     ),
 ];
 

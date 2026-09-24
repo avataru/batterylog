@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block content %}
+  <h1>Match log</h1>
+  <p class="sub">Every request the matcher filled, newest first. Moving any one battery of a match
+     back to the pool location returns the whole set: the rest are moved back with it and the
+     match is marked returned.</p>
+
+  {% if matches %}
+    <table>
+      <tr><th>Requested</th><th>Draw</th><th>Moved to</th><th>Batteries</th><th>Status</th><th></th></tr>
+      {% for m in matches %}
+        <tr>
+          <td>{{ m.matched_at | date10 }} &mdash; {{ m.requested_type }}</td>
+          <td>{{ m.draw }}</td>
+          <td>{{ m.location }}</td>
+          <td>
+            {% for id in m.battery_ids %}<a href="/b/{{ id }}">{{ id | pad3 }}</a>{% if not loop.last %}, {% endif %}{% endfor %}
+          </td>
+          <td>
+            {% if m.returned_at %}
+              Returned {{ m.returned_at | date10 }}
+            {% else %}
+              <span class="health-pill" style="background:hsl(222, 55%, 30%);font-weight:400;white-space:nowrap">In use in <strong>{{ m.location }}</strong></span>
+            {% endif %}
+          </td>
+          <td class="row-actions">
+            {% if not m.returned_at %}
+              <form method="post" action="/match/{{ m.id }}/return"
+                    data-confirm="Return this set to {{ pool_location }}? Every battery in it is moved back and the match is closed.">
+                <button type="submit" class="icon-sm"
+                        title="Return this set to {{ pool_location }}" aria-label="Return this set to {{ pool_location }}">{{ icon(name="batch-location") | safe }}</button>
+              </form>
+            {% endif %}
+            <form method="post" action="/match/{{ m.id }}/delete"
+                  data-confirm="Delete this match from the log? Its batteries stay where they are.">
+              <button type="submit" class="icon-sm danger"
+                      title="Delete this match" aria-label="Delete this match">{{ icon(name="delete") | safe }}</button>
+            </form>
+          </td>
+        </tr>
+      {% endfor %}
+    </table>
+  {% else %}
+    <p class="muted">No matches yet.</p>
+  {% endif %}
+
+  <p class="sub"><a href="/match">&larr; Back to matching</a></p>
+{% endblock content %}

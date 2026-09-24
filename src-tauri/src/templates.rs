@@ -45,6 +45,8 @@ pub fn build() -> Tera {
     add!(tera, "settings.html", "../templates/settings.html");
     add!(tera, "batch_measure.html", "../templates/batch_measure.html");
     add!(tera, "batch_location.html", "../templates/batch_location.html");
+    add!(tera, "match.html", "../templates/match.html");
+    add!(tera, "match_log.html", "../templates/match_log.html");
     add!(tera, "dialog_measure.html", "../templates/dialog_measure.html");
     add!(tera, "dialog_location.html", "../templates/dialog_location.html");
     add!(tera, "dialog_label.html", "../templates/dialog_label.html");

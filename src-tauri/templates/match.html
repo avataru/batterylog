@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% import "macros.html" as macros %}
+{% block content %}
+  <h1>Match batteries</h1>
+  <p class="sub">Ask for batteries of a type out of the pool location
+     (<strong>{{ pool_location }}</strong>) and get a suggestion of which
+     ones to take, ranked by their measured condition. A battery with no
+     capacity reading yet is skipped &mdash; measure it first.</p>
+
+  {% if page_error %}<p class="flash err">{{ page_error }}</p>{% endif %}
+
+  <div class="card">
+    <form method="post" action="/match">
+      <div class="row">
+        <div>
+          <label for="type">Type</label>
+          <input id="type" name="type" list="all-types" required data-autofocus
+                 value="{{ match_type }}" placeholder="AA" autocomplete="off">
+        </div>
+        <div>
+          <label for="count">How many</label>
+          <input id="count" name="count" inputmode="numeric"
+                 value="{{ match_count }}" placeholder="e.g. 3" autocomplete="off">
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <label for="draw">Device draw</label>
+          <select id="draw" name="draw">
+            <option value="low" {% if match_draw == "low" %}selected{% endif %}>Low (a weak cell is still fine &mdash; use it up)</option>
+            <option value="high" {% if match_draw == "high" %}selected{% endif %}>High (needs the strongest cells)</option>
+          </select>
+        </div>
+        <div>
+          <label for="location">New location</label>
+          <input id="location" name="location" list="all-locations" autocomplete="off"
+                 value="{{ match_location }}" placeholder="e.g. Torch">
+          {{ macros::chips(target="#location", values=top_locations) }}
+        </div>
+      </div>
+
+      <button type="submit" class="wide secondary" style="margin-top:1rem">Show suggestion</button>
+    </form>
+
+    {% if suggestion %}
+      <h3 style="margin:1.2rem 0 .4rem">{{ suggestion.count }} battery(ies) suggested</h3>
+      {% if suggestion.mixed %}
+        <p class="flash warn">No single brand and capacity had enough in the pool, so this mixes
+           different ones.</p>
+      {% endif %}
+      <table>
+        <tr><th>ID</th><th>Type</th><th>Brand and capacity</th><th>Measured</th></tr>
+        {% for b in suggestion.rows %}
+          <tr>
+            <td class="id">{{ b.id | pad3 }}</td>
+            <td>{{ b.type }}</td>
+            <td>
+              {% if b.brand or b.nominal_mah %}{{ b.brand }}{% if b.brand and b.nominal_mah %} {% endif %}{% if b.nominal_mah %}{{ b.nominal_mah }} mAh{% endif %}
+              {% else %}<span class="muted">&mdash;</span>{% endif %}
+            </td>
+            <td>{{ b.capacity_mah }} mAh, {{ b.ir_mohm }} m&Omega;{% if b.ir_assumed %} <span class="muted">(IR assumed)</span>{% endif %}</td>
+          </tr>
+        {% endfor %}
+      </table>
+
+      <form method="post" action="/match">
+        <input type="hidden" name="type" value="{{ match_type }}">
+        <input type="hidden" name="count" value="{{ match_count }}">
+        <input type="hidden" name="draw" value="{{ match_draw }}">
+        <input type="hidden" name="location" value="{{ match_location }}">
+        <input type="hidden" name="confirm" value="yes">
+        <button type="submit" class="wide">Move {{ suggestion.count }} to {{ match_location }}</button>
+      </form>
+    {% endif %}
+  </div>
+
+  <p class="sub"><a href="/match/log">See past matches &rarr;</a></p>
+
+  <datalist id="all-types">
+    {% for value in types %}<option value="{{ value }}">{% endfor %}
+  </datalist>
+  <datalist id="all-locations">
+    {% for value in locations %}<option value="{{ value }}">{% endfor %}
+  </datalist>
+{% endblock content %}

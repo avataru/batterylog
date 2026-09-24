@@ -70,11 +70,28 @@ CREATE TABLE IF NOT EXISTS measurements (
     created_at    TEXT    NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS matches (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    matched_at      TEXT    NOT NULL,
+    returned_at     TEXT,
+    location        TEXT    NOT NULL,
+    requested_type  TEXT    NOT NULL,
+    draw            TEXT    NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS match_batteries (
+    match_id    INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
+    battery_id  INTEGER NOT NULL REFERENCES batteries(id) ON DELETE CASCADE,
+    PRIMARY KEY (match_id, battery_id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_history_battery ON location_history(battery_id);
 CREATE INDEX IF NOT EXISTS idx_batteries_deleted ON batteries(deleted_at);
 CREATE INDEX IF NOT EXISTS idx_measurements_battery
     ON measurements(battery_id, measured_at);
 CREATE INDEX IF NOT EXISTS idx_modes_instrument ON instrument_modes(instrument_id);
+CREATE INDEX IF NOT EXISTS idx_match_batteries_battery ON match_batteries(battery_id);
+CREATE INDEX IF NOT EXISTS idx_matches_returned ON matches(returned_at);
 ";
 
 fn now() -> String {
@@ -171,6 +188,7 @@ fn battery_from_row(row: &Row) -> DbResult<Battery> {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LocationEntry {
+    pub id: i64,
     pub location: String,
     pub moved_at: String,
 }
@@ -205,6 +223,31 @@ fn measurement_from_row(row: &Row) -> DbResult<Measurement> {
         charge_ma: row.get("charge_ma")?,
         notes: row.get("notes")?,
         created_at: row.get("created_at")?,
+    })
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Match {
+    pub id: i64,
+    pub matched_at: String,
+    pub returned_at: Option<String>,
+    pub location: String,
+    pub requested_type: String,
+    pub draw: String,
+    /// Not a DB column — filled in by the methods that need it.
+    #[serde(default)]
+    pub battery_ids: Vec<i64>,
+}
+
+fn match_from_row(row: &Row) -> DbResult<Match> {
+    Ok(Match {
+        id: row.get("id")?,
+        matched_at: row.get("matched_at")?,
+        returned_at: row.get("returned_at")?,
+        location: row.get("location")?,
+        requested_type: row.get("requested_type")?,
+        draw: row.get("draw")?,
+        battery_ids: Vec::new(),
     })
 }
 
@@ -398,11 +441,12 @@ impl Db {
 
     pub fn history(&self, battery_id: i64) -> DbResult<Vec<LocationEntry>> {
         let mut stmt = self.conn.prepare(
-            "SELECT location, moved_at FROM location_history \
+            "SELECT id, location, moved_at FROM location_history \
              WHERE battery_id = ? ORDER BY moved_at DESC, id DESC",
         )?;
         let rows = stmt.query_map([battery_id], |row| {
             Ok(LocationEntry {
+                id: row.get("id")?,
                 location: row.get("location")?,
                 moved_at: row.get("moved_at")?,
             })
@@ -775,6 +819,20 @@ impl Db {
         Ok(Some(battery_id))
     }
 
+    /// Removes one location-history entry and returns its battery's id. The
+    /// battery's current location is deliberately left alone, even when the
+    /// newest entry is the one removed.
+    pub fn delete_location_entry(&self, id: i64) -> DbResult<Option<i64>> {
+        let battery_id: Option<i64> = self
+            .conn
+            .query_row("SELECT battery_id FROM location_history WHERE id = ?", [id], |r| r.get(0))
+            .optional()?;
+        if battery_id.is_some() {
+            self.conn.execute("DELETE FROM location_history WHERE id = ?", [id])?;
+        }
+        Ok(battery_id)
+    }
+
     // ── Instruments / procedures ────────────────────────────────────────
 
     pub fn add_instrument(&self, name: &str, slots: i64) -> DbResult<Instrument> {
@@ -1059,5 +1117,130 @@ impl Db {
         let backup = rusqlite::backup::Backup::new(&self.conn, &mut target)?;
         backup.run_to_completion(5, std::time::Duration::from_millis(250), None)?;
         Ok(destination)
+    }
+
+    // ── Matches ──────────────────────────────────────────────────────────
+
+    /// Like [`set_location`](Self::set_location), but when `location` is
+    /// the pool location (case-insensitive) and this battery belongs to an
+    /// open match, the whole set goes back: the match is closed and every
+    /// other active battery in it that isn't already in the pool is moved
+    /// there too, with its own history entry. Every location-changing
+    /// action (single edit, batch location, the scan page) goes through
+    /// this instead of `set_location` directly so the rule applies
+    /// everywhere. Also returns the ids of the batteries moved along with
+    /// this one.
+    pub fn set_location_checked(
+        &self,
+        battery_id: i64,
+        location: &str,
+        pool_location: &str,
+    ) -> DbResult<(Option<Battery>, Vec<i64>)> {
+        let result = self.set_location(battery_id, location)?;
+        let mut also_returned = Vec::new();
+        let Some(battery) = &result else { return Ok((result, also_returned)) };
+        if !battery.location.eq_ignore_ascii_case(pool_location) {
+            return Ok((result, also_returned));
+        }
+
+        let open: Vec<i64> = {
+            let mut stmt = self.conn.prepare(
+                "SELECT m.id FROM matches m JOIN match_batteries mb ON mb.match_id = m.id \
+                 WHERE m.returned_at IS NULL AND mb.battery_id = ?",
+            )?;
+            let rows = stmt.query_map([battery_id], |r| r.get::<_, i64>(0))?;
+            rows.collect::<DbResult<_>>()?
+        };
+        for match_id in open {
+            also_returned.extend(self.close_and_return(match_id, &battery.location, pool_location)?);
+        }
+        Ok((result, also_returned))
+    }
+
+    /// Returns a whole match set to the pool at once: every active battery
+    /// in it that isn't already there is moved to `pool_location`, and the
+    /// match is closed. Returns the ids actually moved.
+    pub fn return_match(&self, match_id: i64, pool_location: &str) -> DbResult<Vec<i64>> {
+        self.close_and_return(match_id, pool_location.trim(), pool_location)
+    }
+
+    fn close_and_return(&self, match_id: i64, location: &str, pool_location: &str) -> DbResult<Vec<i64>> {
+        self.conn.execute(
+            "UPDATE matches SET returned_at = ? WHERE id = ? AND returned_at IS NULL",
+            params![now(), match_id],
+        )?;
+        let mut moved = Vec::new();
+        for id in self.match_battery_ids(match_id)? {
+            let Some(b) = self.get(id)? else { continue };
+            if b.deleted_at.is_some() || b.location.eq_ignore_ascii_case(pool_location) {
+                continue;
+            }
+            self.set_location(id, location)?;
+            moved.push(id);
+        }
+        Ok(moved)
+    }
+
+    /// Records a match and moves each battery in `battery_ids` to
+    /// `location` in the same step, so the log and the actual location
+    /// change never disagree about which batteries were handed out.
+    pub fn create_match(
+        &self,
+        location: &str,
+        requested_type: &str,
+        draw: &str,
+        battery_ids: &[i64],
+    ) -> DbResult<Match> {
+        let timestamp = now();
+        let location = location.trim();
+        self.conn.execute(
+            "INSERT INTO matches (matched_at, returned_at, location, requested_type, draw) \
+             VALUES (?, NULL, ?, ?, ?)",
+            params![timestamp, location, requested_type, draw],
+        )?;
+        let match_id = self.conn.last_insert_rowid();
+        for &battery_id in battery_ids {
+            self.conn.execute(
+                "INSERT INTO match_batteries (match_id, battery_id) VALUES (?, ?)",
+                params![match_id, battery_id],
+            )?;
+            self.set_location(battery_id, location)?;
+        }
+        Ok(Match {
+            id: match_id,
+            matched_at: timestamp,
+            returned_at: None,
+            location: location.to_string(),
+            requested_type: requested_type.to_string(),
+            draw: draw.to_string(),
+            battery_ids: battery_ids.to_vec(),
+        })
+    }
+
+    /// All matches, newest first, each with its battery ids filled in.
+    pub fn list_matches(&self) -> DbResult<Vec<Match>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT * FROM matches ORDER BY matched_at DESC, id DESC",
+        )?;
+        let rows = stmt.query_map([], match_from_row)?;
+        let mut matches: Vec<Match> = rows.collect::<DbResult<_>>()?;
+        for m in &mut matches {
+            m.battery_ids = self.match_battery_ids(m.id)?;
+        }
+        Ok(matches)
+    }
+
+    /// Removes a match from the log. Its batteries stay wherever they are.
+    pub fn delete_match(&self, match_id: i64) -> DbResult<bool> {
+        let removed = self.conn.execute("DELETE FROM matches WHERE id = ?", [match_id])?;
+        Ok(removed > 0)
+    }
+
+    pub fn match_battery_ids(&self, match_id: i64) -> DbResult<Vec<i64>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT battery_id FROM match_batteries WHERE match_id = ? ORDER BY battery_id")?;
+        let rows = stmt.query_map([match_id], |r| r.get::<_, i64>(0))?;
+        rows.collect()
     }
 }

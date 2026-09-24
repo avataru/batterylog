@@ -1,6 +1,6 @@
 # Battery Log
 
-![Version](https://img.shields.io/badge/version-3.2.2-blue)
+![Version](https://img.shields.io/badge/version-3.3.0-blue)
 [![License](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
 [![Built with Claude](https://img.shields.io/badge/Built_with-Claude-D97757)](https://claude.com/claude-code)
 
@@ -55,7 +55,8 @@ A location is free text, not a fixed list ("Case A", "TV remote"), with
 your existing ones offered as suggestions. Every change is recorded in the
 battery's location history. Change it from the battery's page, by scanning
 its label on the Scan page, or for several at once on **Batch change
-location**.
+location**. A history entry can be deleted on its own; that never changes
+where the battery is now.
 
 ### Readings
 
@@ -101,6 +102,28 @@ A battery's Overview page shows its condition:
   nominal capacity as a dashed line. The list colours each row by health,
   from red to green with the health limit as the midpoint, and has a
   **Flagged** view.
+
+### Matching
+
+When a device needs cells, **Match batteries** picks them for you. Ask for a
+type, how many, where they're going and whether the device draws little or
+a lot of current, and it suggests which ones to take out of the pool
+location (`storage` by default):
+
+- It sticks to one brand and nominal capacity when any single one has
+  enough cells, and only mixes when none does (and says so).
+- For a **low-draw** device it picks the weakest cells, so they get used up
+  rather than sitting in storage. For a **high-draw** device it picks the
+  strongest, since a weak cell sags under load.
+- A cell with no capacity reading is left out: measure it first. A cell with
+  a capacity reading but no resistance reading is ranked with an assumed
+  35 mΩ, and the suggestion marks it as assumed.
+
+Confirming moves the cells and adds the match to the **Match log**. The set
+stays "in use" until any one of its cells goes back to the pool, however it
+gets there (battery page, batch location, scanning, or the log's **Return**
+button), and then the whole set goes back with it. Matches can be deleted
+from the log without moving anything.
 
 ### Retiring and reusing
 
@@ -368,6 +391,8 @@ the environment variable below directly:
 | `PDF_LAYOUT` | `pages` | Only matters when `LABEL_OUTPUT` is `pdf` and more than one label is saved at once: `pages` gives each label its own exactly-sized page, `grid` tiles several onto A4 sheets. |
 | `HEALTH_LIMIT_PCT` | `80` | Capacity retention below which a cell is flagged. |
 | `IR_LIMIT_AA` / `IR_LIMIT_AAA` | `100` / `200` | Resistance limit (mΩ) per cell size. |
+| `POOL_LOCATION` | `storage` | The location matching takes cells from and returns them to. Compared case-insensitively. |
+| `DEFAULT_IR_MOHM` | `35` | Resistance (mΩ) assumed when ranking a pool cell that has no resistance reading yet. |
 
 There's no `PORT` to configure — no server to bind one — and no font-path
 setting: label text uses `ab_glyph` against a font baked into the binary,
