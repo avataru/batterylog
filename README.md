@@ -205,10 +205,9 @@ depend on where the exe is.
 
 ## Running the tests
 
-Tests do **not** run automatically as part of `cargo build` — that only
-compiles. They have to be run explicitly, and they're not run as part of any
-CI/build step in this project (there is no CI configured), so it's on you to
-run them before trusting a change:
+Tests do **not** run as part of `cargo build` — that only compiles. GitHub
+runs both suites on every push to any branch (`.github/workflows/test.yml`),
+but that's after the fact, so run them locally before trusting a change:
 
 ```powershell
 cargo test -p batteries-core       # db, health, labels, PDF output

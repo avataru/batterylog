@@ -1,0 +1,28 @@
+name: Tests
+
+# Runs both test suites on every push to any branch, so a broken test shows
+# up when the code is pushed rather than when a release is attempted. Tag
+# pushes don't trigger this (a `branches` filter excludes tags); those go to
+# release.yml. Can also be started by hand from the Actions tab.
+
+on:
+  push:
+    branches:
+      - "**"
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+
+      - run: cargo test --workspace
