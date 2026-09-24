@@ -2,10 +2,12 @@ name: Release
 
 # Only a pushed version tag triggers this -- not every push to main, which
 # would turn every small commit into a public release. Cut one by bumping
-# Cargo.toml's [workspace.package] version, committing, then:
+# Cargo.toml's [workspace.package] version, adding that version's section to
+# CHANGELOG.md, committing, then:
 #   git tag v<version> && git push origin v<version>
-# The tag's <version> should match Cargo.toml's, since neither is checked
-# against the other here.
+# The release is published straight away, with the changelog section as its
+# notes. The first step fails the run, before anything is built, if the tag
+# doesn't match Cargo.toml's version or the changelog has no entry for it.
 
 on:
   push:
@@ -18,7 +20,29 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+
+      # The Windows runner checks files out with CRLF line endings, hence
+      # the `tr -d '\r'`s.
+      - name: Check the version and read its changelog entry
+        id: notes
+        shell: bash
+        run: |
+          version=$(tr -d '\r' < Cargo.toml | sed -n 's/^version = "\(.*\)"$/\1/p' | head -n 1)
+          if [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME doesn't match Cargo.toml's version ($version)."
+            exit 1
+          fi
+          notes=$(tr -d '\r' < CHANGELOG.md | awk -v v="$version" '/^## /{found = ($2 == v); next} found')
+          if [ -z "$(printf '%s' "$notes" | tr -d '[:space:]')" ]; then
+            echo "::error::CHANGELOG.md has no entry for $version."
+            exit 1
+          fi
+          {
+            echo "body<<CHANGELOG_END"
+            printf '%s\n' "$notes"
+            echo "CHANGELOG_END"
+          } >> "$GITHUB_OUTPUT"
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -32,8 +56,6 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "Battery Log ${{ github.ref_name }}"
-          releaseBody: "See the commit history for what changed in this version."
-          # Draft, not published immediately -- gives a chance to check the
-          # attached installers and edit the notes before anyone sees it.
-          releaseDraft: true
+          releaseBody: ${{ steps.notes.outputs.body }}
+          releaseDraft: false
           prerelease: false

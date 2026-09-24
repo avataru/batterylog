@@ -169,7 +169,9 @@ inherit it (`version.workspace = true`), it's what `env!("CARGO_PKG_VERSION")`
 embeds into the window title and the header's version text, and
 `src-tauri/tauri.conf.json` deliberately has no `version` field of its own —
 Tauri falls back to the Cargo package version when that field is absent. To
-release a new version, edit the workspace `Cargo.toml` and nothing else.
+release a new version, edit the workspace `Cargo.toml` (plus the version
+badge at the top of this README, which is static) and add the version's
+section to [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Building and running
 
@@ -256,10 +258,12 @@ to day and only run this when you actually want an installer.
 
 **Releases build automatically**, via `.github/workflows/release.yml`, but
 only from a pushed version tag — not every push to `main`. To cut one: bump
-`Cargo.toml`'s version, commit, then `git tag v<version> && git push origin
-v<version>`. That builds both installers on GitHub's Windows runners and
-attaches them to a draft GitHub Release, left as a draft so the installers
-and release notes can be checked before it's published.
+`Cargo.toml`'s version, add its section to `CHANGELOG.md`, commit, then
+`git tag v<version> && git push origin v<version>`. That builds both
+installers on GitHub's Windows runners and publishes a GitHub Release with
+them attached and that changelog section as its notes. The run stops before
+building anything if the tag doesn't match `Cargo.toml`'s version or the
+changelog has no entry for it.
 
 ## Where your data is
 
