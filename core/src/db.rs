@@ -130,6 +130,22 @@ impl Db {
         &self.path
     }
 
+    /// Runs `f` inside a savepoint, so every write it makes lands or none
+    /// do. Savepoints nest, so an atomic method can call another one.
+    pub fn atomically<T, E: From<rusqlite::Error>>(&self, f: impl FnOnce() -> Result<T, E>) -> Result<T, E> {
+        self.conn.execute_batch("SAVEPOINT atomic")?;
+        match f() {
+            Ok(value) => {
+                self.conn.execute_batch("RELEASE atomic")?;
+                Ok(value)
+            }
+            Err(e) => {
+                let _ = self.conn.execute_batch("ROLLBACK TO atomic; RELEASE atomic");
+                Err(e)
+            }
+        }
+    }
+
     /// Replace the app's database with `source` (e.g. a `batteries.db`
     /// backup) and reopen the live connection against it, in place — no app
     /// restart needed. Only the *current* schema shape is supported; this
@@ -557,15 +573,17 @@ impl Db {
             return Ok(Some(battery));
         }
         let timestamp = now();
-        self.conn.execute(
-            "UPDATE batteries SET location = ?, updated_at = ? WHERE id = ?",
-            params![location, timestamp, battery_id],
-        )?;
-        self.conn.execute(
-            "INSERT INTO location_history (battery_id, location, moved_at) VALUES (?, ?, ?)",
-            params![battery_id, location, timestamp],
-        )?;
-        self.get(battery_id)
+        self.atomically(|| {
+            self.conn.execute(
+                "UPDATE batteries SET location = ?, updated_at = ? WHERE id = ?",
+                params![location, timestamp, battery_id],
+            )?;
+            self.conn.execute(
+                "INSERT INTO location_history (battery_id, location, moved_at) VALUES (?, ?, ?)",
+                params![battery_id, location, timestamp],
+            )?;
+            self.get(battery_id)
+        })
     }
 
     /// Edit descriptive fields. `nominal_mah` is `Some(None)` to clear it,
@@ -685,13 +703,12 @@ impl Db {
         if has_measurements {
             return Err("This battery has readings, so it cannot be permanently removed.".to_string());
         }
-        self.conn
-            .execute("DELETE FROM location_history WHERE battery_id = ?", [battery_id])
-            .map_err(|e| e.to_string())?;
-        self.conn
-            .execute("DELETE FROM batteries WHERE id = ?", [battery_id])
-            .map_err(|e| e.to_string())?;
-        Ok(())
+        self.atomically(|| {
+            self.conn.execute("DELETE FROM location_history WHERE battery_id = ?", [battery_id])?;
+            self.conn.execute("DELETE FROM batteries WHERE id = ?", [battery_id])?;
+            Ok(())
+        })
+        .map_err(|e: rusqlite::Error| e.to_string())
     }
 
     pub fn restore(&self, battery_id: i64) -> DbResult<Option<Battery>> {
@@ -709,25 +726,33 @@ impl Db {
         self.get(battery_id)
     }
 
+    /// Clears everything about the cell except its id and type, for when the
+    /// sticker goes onto a different cell. That includes its match
+    /// memberships: they belong to the old cell, and an open one left behind
+    /// would let the new cell close it and pull that set back to the pool.
     pub fn reset(&self, battery_id: i64) -> DbResult<Option<Battery>> {
         if self.get(battery_id)?.is_none() {
             return Ok(None);
         }
         let timestamp = now();
-        self.conn
-            .execute("DELETE FROM location_history WHERE battery_id = ?", [battery_id])?;
-        self.conn
-            .execute("DELETE FROM measurements WHERE battery_id = ?", [battery_id])?;
-        self.conn.execute(
-            "UPDATE batteries SET nominal_mah = NULL, brand = '', location = '', notes = '', \
-             created_at = ?, updated_at = ?, deleted_at = NULL WHERE id = ?",
-            params![timestamp, timestamp, battery_id],
-        )?;
-        self.conn.execute(
-            "INSERT INTO location_history (battery_id, location, moved_at) VALUES (?, ?, ?)",
-            params![battery_id, "Record cleared", timestamp],
-        )?;
-        self.get(battery_id)
+        self.atomically(|| {
+            self.conn
+                .execute("DELETE FROM location_history WHERE battery_id = ?", [battery_id])?;
+            self.conn
+                .execute("DELETE FROM measurements WHERE battery_id = ?", [battery_id])?;
+            self.conn
+                .execute("DELETE FROM match_batteries WHERE battery_id = ?", [battery_id])?;
+            self.conn.execute(
+                "UPDATE batteries SET nominal_mah = NULL, brand = '', location = '', notes = '', \
+                 created_at = ?, updated_at = ?, deleted_at = NULL WHERE id = ?",
+                params![timestamp, timestamp, battery_id],
+            )?;
+            self.conn.execute(
+                "INSERT INTO location_history (battery_id, location, moved_at) VALUES (?, ?, ?)",
+                params![battery_id, "Record cleared", timestamp],
+            )?;
+            self.get(battery_id)
+        })
     }
 
     // ── Measurements ─────────────────────────────────────────────────────
@@ -754,27 +779,37 @@ impl Db {
         if self.get(battery_id)?.is_none() {
             return Ok(None);
         }
-        self.conn.execute(
-            "INSERT INTO measurements \
-             (battery_id, kind, measured_at, capacity_mah, ir_mohm, instrument_id, mode_id, \
-              discharge_ma, charge_ma, notes, created_at) \
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            params![
-                battery_id,
-                kind,
-                measured_at,
-                capacity_mah,
-                ir_mohm,
-                instrument_id,
-                mode_id,
-                discharge_ma,
-                charge_ma,
-                notes.trim(),
-                now()
-            ],
-        )?;
-        let new_id = self.conn.last_insert_rowid();
-        self.measurement(new_id)
+        self.atomically(|| {
+            // A purchase is a single fact about a cell, not a log of repeated
+            // events, so a new "bought" entry replaces any existing one.
+            if kind == "bought" {
+                self.conn.execute(
+                    "DELETE FROM measurements WHERE battery_id = ? AND kind = 'bought'",
+                    [battery_id],
+                )?;
+            }
+            self.conn.execute(
+                "INSERT INTO measurements \
+                 (battery_id, kind, measured_at, capacity_mah, ir_mohm, instrument_id, mode_id, \
+                  discharge_ma, charge_ma, notes, created_at) \
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                params![
+                    battery_id,
+                    kind,
+                    measured_at,
+                    capacity_mah,
+                    ir_mohm,
+                    instrument_id,
+                    mode_id,
+                    discharge_ma,
+                    charge_ma,
+                    notes.trim(),
+                    now()
+                ],
+            )?;
+            let new_id = self.conn.last_insert_rowid();
+            self.measurement(new_id)
+        })
     }
 
     pub fn last_reading_defaults(
@@ -1136,32 +1171,34 @@ impl Db {
         location: &str,
         pool_location: &str,
     ) -> DbResult<(Option<Battery>, Vec<i64>)> {
-        let result = self.set_location(battery_id, location)?;
-        let mut also_returned = Vec::new();
-        let Some(battery) = &result else { return Ok((result, also_returned)) };
-        if !battery.location.eq_ignore_ascii_case(pool_location) {
-            return Ok((result, also_returned));
-        }
+        self.atomically(|| {
+            let result = self.set_location(battery_id, location)?;
+            let mut also_returned = Vec::new();
+            let Some(battery) = &result else { return Ok((result, also_returned)) };
+            if !battery.location.eq_ignore_ascii_case(pool_location) {
+                return Ok((result, also_returned));
+            }
 
-        let open: Vec<i64> = {
-            let mut stmt = self.conn.prepare(
-                "SELECT m.id FROM matches m JOIN match_batteries mb ON mb.match_id = m.id \
-                 WHERE m.returned_at IS NULL AND mb.battery_id = ?",
-            )?;
-            let rows = stmt.query_map([battery_id], |r| r.get::<_, i64>(0))?;
-            rows.collect::<DbResult<_>>()?
-        };
-        for match_id in open {
-            also_returned.extend(self.close_and_return(match_id, &battery.location, pool_location)?);
-        }
-        Ok((result, also_returned))
+            let open: Vec<i64> = {
+                let mut stmt = self.conn.prepare(
+                    "SELECT m.id FROM matches m JOIN match_batteries mb ON mb.match_id = m.id \
+                     WHERE m.returned_at IS NULL AND mb.battery_id = ?",
+                )?;
+                let rows = stmt.query_map([battery_id], |r| r.get::<_, i64>(0))?;
+                rows.collect::<DbResult<_>>()?
+            };
+            for match_id in open {
+                also_returned.extend(self.close_and_return(match_id, &battery.location, pool_location)?);
+            }
+            Ok((result, also_returned))
+        })
     }
 
     /// Returns a whole match set to the pool at once: every active battery
     /// in it that isn't already there is moved to `pool_location`, and the
     /// match is closed. Returns the ids actually moved.
     pub fn return_match(&self, match_id: i64, pool_location: &str) -> DbResult<Vec<i64>> {
-        self.close_and_return(match_id, pool_location.trim(), pool_location)
+        self.atomically(|| self.close_and_return(match_id, pool_location.trim(), pool_location))
     }
 
     fn close_and_return(&self, match_id: i64, location: &str, pool_location: &str) -> DbResult<Vec<i64>> {
@@ -1193,19 +1230,22 @@ impl Db {
     ) -> DbResult<Match> {
         let timestamp = now();
         let location = location.trim();
-        self.conn.execute(
-            "INSERT INTO matches (matched_at, returned_at, location, requested_type, draw) \
-             VALUES (?, NULL, ?, ?, ?)",
-            params![timestamp, location, requested_type, draw],
-        )?;
-        let match_id = self.conn.last_insert_rowid();
-        for &battery_id in battery_ids {
+        let match_id = self.atomically(|| {
             self.conn.execute(
-                "INSERT INTO match_batteries (match_id, battery_id) VALUES (?, ?)",
-                params![match_id, battery_id],
+                "INSERT INTO matches (matched_at, returned_at, location, requested_type, draw) \
+                 VALUES (?, NULL, ?, ?, ?)",
+                params![timestamp, location, requested_type, draw],
             )?;
-            self.set_location(battery_id, location)?;
-        }
+            let match_id = self.conn.last_insert_rowid();
+            for &battery_id in battery_ids {
+                self.conn.execute(
+                    "INSERT INTO match_batteries (match_id, battery_id) VALUES (?, ?)",
+                    params![match_id, battery_id],
+                )?;
+                self.set_location(battery_id, location)?;
+            }
+            Ok::<_, rusqlite::Error>(match_id)
+        })?;
         Ok(Match {
             id: match_id,
             matched_at: timestamp,

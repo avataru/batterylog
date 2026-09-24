@@ -136,9 +136,15 @@ function initScanner() {
   document.getElementById('dlg-save').addEventListener('click', async () => {
     const location = document.getElementById('dlg-location').value.trim();
     try {
-      await invoke('set_location_api', { id: current.id, location });
-      say('Battery ' + String(current.id).padStart(3, '0') + ' is now at "'
-          + (location || 'nowhere recorded') + '".');
+      const moved = await invoke('set_location_api', { id: current.id, location });
+      const pad = (id) => String(id).padStart(3, '0');
+      let message = 'Battery ' + pad(current.id) + ' is now at "'
+          + (location || 'nowhere recorded') + '".';
+      if (moved.also_returned && moved.also_returned.length) {
+        message += ' Also returned from the same match: '
+            + moved.also_returned.map(pad).join(', ') + '.';
+      }
+      say(message);
       readyForNextScan();
     } catch (e) { say('Save failed: ' + e); }
   });

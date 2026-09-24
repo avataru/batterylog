@@ -163,3 +163,67 @@ fn last_reading_defaults_skips_bought_entries() {
     assert_eq!(instrument_id, Some(instrument.id));
     assert_eq!(discharge_ma, Some(500));
 }
+
+#[test]
+fn atomically_rolls_back_every_write_when_one_step_fails() {
+    let (_dir, db) = open_temp();
+    db.create(1, "AA", None, "", "Drawer", "").unwrap();
+
+    let result: batteries_core::db::DbResult<()> = db.atomically(|| {
+        db.set_location(1, "Torch")?;
+        Err(rusqlite::Error::InvalidParameterName("simulated failure".into()))
+    });
+
+    assert!(result.is_err());
+    assert_eq!(db.get(1).unwrap().unwrap().location, "Drawer", "the move should have been undone");
+    assert_eq!(db.history(1).unwrap().len(), 1, "and so should its history entry");
+}
+
+#[test]
+fn atomic_steps_nest_inside_each_other() {
+    let (_dir, db) = open_temp();
+    db.create(1, "AA", None, "", "Drawer", "").unwrap();
+    db.create(2, "AA", None, "", "Drawer", "").unwrap();
+
+    // set_location is itself atomic; nesting it must not break the outer step.
+    let result: batteries_core::db::DbResult<()> = db.atomically(|| {
+        db.set_location(1, "Torch")?;
+        db.set_location(2, "Torch")?;
+        Ok(())
+    });
+
+    assert!(result.is_ok());
+    assert_eq!(db.get(2).unwrap().unwrap().location, "Torch");
+}
+
+#[test]
+fn a_new_bought_entry_replaces_the_old_one_whichever_way_it_is_added() {
+    let (_dir, db) = open_temp();
+    db.create(1, "AA", None, "", "", "").unwrap();
+
+    db.add_measurement(1, "bought", "2026-01-01", None, None, None, None, None, None, "").unwrap();
+    db.add_measurement(1, "bought", "2026-02-01", None, None, None, None, None, None, "").unwrap();
+
+    let bought: Vec<_> = db.measurements(1).unwrap().into_iter().filter(|m| m.kind == "bought").collect();
+    assert_eq!(bought.len(), 1);
+    assert_eq!(bought[0].measured_at, "2026-02-01");
+}
+
+#[test]
+fn clearing_a_record_drops_its_match_memberships() {
+    let (_dir, db) = open_temp();
+    for id in 1..=2 {
+        db.create(id, "AA", Some(2000), "", "storage", "").unwrap();
+    }
+    let matched = db.create_match("Torch", "AA", "low", &[1, 2]).unwrap();
+
+    db.reset(1).unwrap();
+
+    assert_eq!(db.match_battery_ids(matched.id).unwrap(), vec![2]);
+    // The sticker is on a different cell now: filing that cell in storage
+    // must not close the old match or pull battery 2 back.
+    let (_, also_returned) = db.set_location_checked(1, "storage", "storage").unwrap();
+    assert!(also_returned.is_empty());
+    assert_eq!(db.get(2).unwrap().unwrap().location, "Torch");
+    assert!(db.list_matches().unwrap()[0].returned_at.is_none());
+}

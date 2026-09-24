@@ -727,3 +727,76 @@ fn battery_page_and_match_log_offer_delete_buttons() {
     let log = expect_page(router::render_page(&state, "/match/log", ""));
     assert!(log.contains("/delete") && log.contains("Delete this match"));
 }
+
+// ── Review pass ─────────────────────────────────────────────────────────
+
+#[test]
+fn batch_measure_saves_nothing_when_any_row_is_invalid() {
+    let (_dir, state) = fresh_state();
+    let instrument_id;
+    {
+        let db = state.db.lock().unwrap();
+        db.create(1, "AA", Some(2000), "", "", "").unwrap();
+        db.create(2, "AA", Some(2000), "", "", "").unwrap();
+        instrument_id = db.add_instrument("Charger", 2).unwrap().id;
+        db.add_mode(instrument_id, "Analyse", "analysed", "", None).unwrap();
+    }
+    let instrument = instrument_id.to_string();
+
+    // Row 1 is fine; row 2 has a capacity with no discharge current.
+    let html = expect_page(router::submit_form(
+        &state,
+        "/batch/measure",
+        &fields(&[
+            ("kind", "analysed"), ("measured_at", "2026-01-01"), ("instrument_id", &instrument),
+            ("battery_id_1", "1"), ("capacity_mah_1", "1900"), ("discharge_ma_1", "500"),
+            ("battery_id_2", "2"), ("capacity_mah_2", "1800"),
+        ]),
+    ));
+
+    assert!(html.contains("discharge current"));
+    assert!(
+        state.db.lock().unwrap().measurements(1).unwrap().is_empty(),
+        "row 1 must not be saved on its own, or fixing row 2 and resubmitting records it twice"
+    );
+}
+
+#[test]
+fn a_rejected_reading_keeps_the_rest_of_the_battery_page_intact() {
+    let (_dir, state) = fresh_state();
+    {
+        let db = state.db.lock().unwrap();
+        db.create(1, "AA", Some(2000), "", "", "").unwrap();
+        db.create(2, "AA", Some(2000), "", "", "").unwrap();
+        db.soft_delete(1).unwrap();
+    }
+
+    let html = expect_page(router::submit_form(
+        &state,
+        "/b/1/measure",
+        &fields(&[("kind", "analysed"), ("measured_at", "2026-01-01"), ("ir_mohm", "-5")]),
+    ));
+
+    assert!(html.contains("cannot be negative"));
+    assert!(
+        html.contains("delete it permanently"),
+        "a deleted battery with no readings should still offer permanent deletion: {html}"
+    );
+}
+
+#[test]
+fn a_later_list_page_renders() {
+    let (_dir, state) = fresh_state();
+    {
+        let db = state.db.lock().unwrap();
+        db.set_setting("page_size", "5").unwrap();
+        for id in 1..=12 {
+            db.create(id, "AA", Some(2000), "", "", "").unwrap();
+        }
+    }
+
+    let html = expect_page(router::render_page(&state, "/", "page=2"));
+
+    assert!(html.contains(">006<") && html.contains(">010<"));
+    assert!(!html.contains(">011<"));
+}

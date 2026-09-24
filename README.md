@@ -1,6 +1,6 @@
 # Battery Log
 
-![Version](https://img.shields.io/badge/version-3.3.0-blue)
+![Version](https://img.shields.io/badge/version-3.3.1-blue)
 [![License](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
 [![Built with Claude](https://img.shields.io/badge/Built_with-Claude-D97757)](https://claude.com/claude-code)
 
@@ -62,7 +62,8 @@ where the battery is now.
 
 A reading has a date and a kind:
 
-- **bought** — the date only.
+- **bought** — the date only. A cell has at most one; adding another
+  replaces it.
 - **charged** or **analysed** — from an instrument (and usually one of its
   procedures), carrying any of: capacity (mAh), resistance (mΩ), discharge
   current, charge current and notes.

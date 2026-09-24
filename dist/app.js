@@ -10,6 +10,12 @@
 const invoke = window.__TAURI__.core.invoke;
 const content = document.getElementById('app-content');
 
+// window.alert() never displays anything in this webview, so errors go
+// through a native dialog instead.
+function showError(message) {
+  invoke('error_dialog', { message }).catch(() => {});
+}
+
 // Splits "/instruments?show=active#procedure-5" into its path, query and
 // fragment. The fragment matters: anchors like #procedure-5 (used to keep a
 // card open/scrolled-to after a move/edit) must never be sent to the Rust
@@ -83,7 +89,7 @@ async function go(path, query, fragment) {
       try {
         await invoke('save_labels_pdf', { ids });
       } catch (e) {
-        window.alert('Could not save the PDF: ' + e);
+        showError('Could not save the PDF: ' + e);
       }
     }
   }
@@ -125,7 +131,7 @@ async function handleDownload(link) {
     a.remove();
     setTimeout(() => URL.revokeObjectURL(objectUrl), 5000);
   } catch (e) {
-    window.alert('Could not render the label: ' + e);
+    showError('Could not render the label: ' + e);
   }
 }
 
@@ -184,7 +190,7 @@ document.addEventListener('submit', async (event) => {
       const result = await invoke('submit_form', { path, fields });
       await applyResult(result);
     } catch (e) {
-      window.alert('Save failed: ' + e);
+      showError('Save failed: ' + e);
     }
   }
 });

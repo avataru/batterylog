@@ -152,13 +152,17 @@ function mdInsertBlock(textarea, snippet) {
   textarea.focus();
 }
 
+// window.prompt() never displays anything in this webview, so rather than
+// asking for the URL up front, insert the link with a placeholder URL and
+// leave it selected, ready to be typed over.
 function mdInsertLink(textarea, isImage) {
-  const url = window.prompt(isImage ? 'Image URL' : 'Link URL', 'https://');
-  if (!url) return;
   const start = textarea.selectionStart, end = textarea.selectionEnd;
   const label = textarea.value.slice(start, end) || (isImage ? 'description' : 'link text');
-  const markup = (isImage ? '![' : '[') + label + '](' + url + ')';
-  textarea.setRangeText(markup, start, end, 'end');
+  const prefix = (isImage ? '![' : '[') + label + '](';
+  const placeholder = 'https://';
+  textarea.setRangeText(prefix + placeholder + ')', start, end, 'end');
+  const urlStart = start + prefix.length;
+  textarea.setSelectionRange(urlStart, urlStart + placeholder.length);
   textarea.dispatchEvent(new Event('input'));
   textarea.focus();
 }

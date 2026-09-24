@@ -39,6 +39,19 @@ pub fn confirm_dialog(app: tauri::AppHandle, message: String) -> bool {
         .blocking_show()
 }
 
+/// The error-report counterpart to [`confirm_dialog`]: `window.alert()`
+/// never displays anything in this webview either.
+#[tauri::command]
+pub fn error_dialog(app: tauri::AppHandle, message: String) {
+    use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
+    app.dialog()
+        .message(message)
+        .title("Something went wrong")
+        .kind(MessageDialogKind::Error)
+        .buttons(MessageDialogButtons::Ok)
+        .blocking_show();
+}
+
 #[tauri::command]
 pub fn submit_form(state: State<AppState>, path: String, fields: HashMap<String, String>) -> CommandResult {
     router::submit_form(&state, &path, &fields)
@@ -67,11 +80,20 @@ pub fn restore_battery_api(state: State<AppState>, id: i64) -> Result<Value, Str
     Ok(serde_json::to_value(battery).unwrap())
 }
 
+#[derive(Serialize)]
+pub struct MovedBattery {
+    #[serde(flatten)]
+    battery: Value,
+    also_returned: Vec<i64>,
+}
+
 #[tauri::command]
-pub fn set_location_api(state: State<AppState>, id: i64, location: String) -> Result<Value, String> {
+pub fn set_location_api(state: State<AppState>, id: i64, location: String) -> Result<MovedBattery, String> {
     let db = state.db.lock().unwrap();
-    let battery = db.set_location(id, &location).map_err(|e| e.to_string())?.ok_or_else(|| "No such battery.".to_string())?;
-    Ok(serde_json::to_value(battery).unwrap())
+    let pool_location = config::get(&db, "pool_location").as_text();
+    let (battery, also_returned) = db.set_location_checked(id, &location, &pool_location).map_err(|e| e.to_string())?;
+    let battery = battery.ok_or_else(|| "No such battery.".to_string())?;
+    Ok(MovedBattery { battery: serde_json::to_value(battery).unwrap(), also_returned })
 }
 
 #[tauri::command]

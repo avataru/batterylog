@@ -136,7 +136,7 @@ checksum = "ac07cdecf99051d9a5238b80f35af32cdeba5b336e55d957b318b50137e18da5"
 
 [[package]]
 name = "batteries-core"
-version = "3.3.0"
+version = "3.3.1"
 dependencies = [
  "ab_glyph",
  "chrono",
@@ -150,7 +150,7 @@ dependencies = [
 
 [[package]]
 name = "battery-log"
-version = "3.3.0"
+version = "3.3.1"
 dependencies = [
  "batteries-core",
  "chrono",

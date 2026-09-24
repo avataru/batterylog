@@ -7,7 +7,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use batteries_core::db::{Battery, Db};
+use batteries_core::db::{Battery, Db, DbResult};
 use batteries_core::{config, health, labels, matching};
 use serde::Serialize;
 use serde_json::{json, Value};
@@ -149,7 +149,7 @@ pub fn render_page(state: &AppState, path: &str, query: &str) -> CommandResult {
         ["match", "log"] => page_match_log(state, &msg, &error),
         ["b", id] => {
             if let Ok(id) = id.parse::<i64>() {
-                page_detail(state, id, &q, &msg, &error)
+                page_detail(state, id, &q, &msg, &error, None)
             } else {
                 not_found_result(state, path)
             }
@@ -310,7 +310,8 @@ fn page_list(state: &AppState, q: &HashMap<String, String>, msg: &str, error: &s
         if !location_filter.is_empty() { pairs.push(("location", &location_filter)); }
         if !search.is_empty() { pairs.push(("q", &search)); }
         if sort != "id" { pairs.push(("sort", sort)); }
-        if page_num != 1 { pairs.push(("page", Box::leak(page_num.to_string().into_boxed_str()))); }
+        let page_text = page_num.to_string();
+        if page_num != 1 { pairs.push(("page", &page_text)); }
         let s = query_string(&pairs);
         if s.is_empty() { "/".to_string() } else { format!("/?{s}") }
     };
@@ -563,7 +564,16 @@ fn page_match_log(state: &AppState, msg: &str, error: &str) -> CommandResult {
     page(state, "match_log.html", ctx, "Match log", msg, error, "")
 }
 
-fn page_detail(state: &AppState, id: i64, q: &HashMap<String, String>, msg: &str, error: &str) -> CommandResult {
+/// `measure_retry` re-renders the page with the Add-reading dialog open,
+/// showing that error and keeping what was typed into it.
+fn page_detail(
+    state: &AppState,
+    id: i64,
+    q: &HashMap<String, String>,
+    msg: &str,
+    error: &str,
+    measure_retry: Option<(&str, &HashMap<String, String>)>,
+) -> CommandResult {
     let db = state.db.lock().unwrap();
     let battery = match db.get(id).unwrap_or(None) {
         Some(b) => b,
@@ -571,7 +581,7 @@ fn page_detail(state: &AppState, id: i64, q: &HashMap<String, String>, msg: &str
     };
 
     let tab = q.get("tab").cloned().unwrap_or_default();
-    let dialog = q.get("dialog").cloned().unwrap_or_default();
+    let dialog = if measure_retry.is_some() { "measure".to_string() } else { q.get("dialog").cloned().unwrap_or_default() };
     let (prev, next) = db.adjacent_ids(id).unwrap_or((None, None));
     let measurements = db.measurements(id).unwrap_or_default();
     let history = db.history(id).unwrap_or_default();
@@ -591,6 +601,16 @@ fn page_detail(state: &AppState, id: i64, q: &HashMap<String, String>, msg: &str
     let highest_id = db.next_id().unwrap_or(1) - 1;
     let will_hard_delete = battery.id == highest_id && measurements.is_empty();
     let can_purge = battery.deleted_at.is_some() && measurements.is_empty();
+    let (measure_error, measure) = match measure_retry {
+        Some((measure_error, fields)) => (measure_error, fields_to_value(fields)),
+        None => (
+            "",
+            json!({
+                "instrument_id": last_instrument, "mode_id": last_mode,
+                "discharge_ma": last_discharge, "charge_ma": last_charge,
+            }),
+        ),
+    };
 
     let ctx = json!({
         "battery": battery,
@@ -605,11 +625,8 @@ fn page_detail(state: &AppState, id: i64, q: &HashMap<String, String>, msg: &str
         "kinds": batteries_core::db::KINDS,
         "today": today(),
         "types": types, "brands": brands, "locations": locations, "top_locations": top_locations,
-        "measure_error": "",
-        "measure": {
-            "instrument_id": last_instrument, "mode_id": last_mode,
-            "discharge_ma": last_discharge, "charge_ma": last_charge,
-        },
+        "measure_error": measure_error,
+        "measure": measure,
     });
     let title = format!("Battery {id:03}");
     page(state, "detail.html", ctx, &title, msg, error, &dialog)
@@ -689,16 +706,17 @@ fn submit_add(state: &AppState, fields: &HashMap<String, String>) -> CommandResu
     let nominal_mah = whole_number(get_str(fields, "nominal_mah"));
     let brand = get_str(fields, "brand");
     let location = get_str(fields, "location");
-    let mut created = Vec::new();
-    for id in &ids {
-        match db.create(*id, type_name, nominal_mah, brand, location, "") {
-            Ok(b) => created.push(b),
-            Err(e) => {
-                drop(db);
-                return page_add(state, "", &e.to_string(), Some(json!({"add_values": fields_to_value(fields)})));
-            }
+    let created = match db.atomically(|| {
+        ids.iter()
+            .map(|&id| db.create(id, type_name, nominal_mah, brand, location, ""))
+            .collect::<Result<Vec<_>, _>>()
+    }) {
+        Ok(created) => created,
+        Err(e) => {
+            drop(db);
+            return page_add(state, "", &e.to_string(), Some(json!({"add_values": fields_to_value(fields)})));
         }
-    }
+    };
 
     let want_print = fields.contains_key("print_label");
     let ids_i64: Vec<i64> = created.iter().map(|b| b.id).collect();
@@ -710,16 +728,29 @@ fn submit_add(state: &AppState, fields: &HashMap<String, String>) -> CommandResu
     } else {
         String::new()
     };
+    let mut print_error = String::new();
     if want_print && save_pdf_ids.is_empty() && labels::printer_status(&db).available {
         let tape_mm_x10 = tape_mm_x10(&db);
-        let _ = labels::print_labels(&db, &ids_i64, tape_mm_x10);
+        if let Err(e) = labels::print_labels(&db, &ids_i64, tape_mm_x10) {
+            print_error = format!("The label didn't print: {e}");
+        }
     }
 
     if created.len() == 1 {
-        redirect(format!("/b/{}", created[0].id), &[("msg", "Battery added."), ("save_pdf_ids", &save_pdf_ids)])
+        redirect(
+            format!("/b/{}", created[0].id),
+            &[("msg", "Battery added."), ("error", &print_error), ("save_pdf_ids", &save_pdf_ids)],
+        )
     } else {
         let next = safe_path(get_str(fields, "next"), "/");
-        redirect(next, &[("msg", &format!("{} batteries added.", created.len())), ("save_pdf_ids", &save_pdf_ids)])
+        redirect(
+            next,
+            &[
+                ("msg", &format!("{} batteries added.", created.len())),
+                ("error", &print_error),
+                ("save_pdf_ids", &save_pdf_ids),
+            ],
+        )
     }
 }
 
@@ -914,23 +945,13 @@ fn submit_measure(state: &AppState, id: &str, fields: &HashMap<String, String>) 
         Ok(v) => v,
         Err(e) => {
             drop(db);
-            return page_detail_with_measure_error(state, id, &e, fields);
+            return retry_measure(state, id, &e, fields);
         }
     };
 
     if let Err(e) = clean_reading(&db, kind, capacity_mah, ir_mohm, instrument_id, mode_id, discharge_ma, charge_ma) {
         drop(db);
-        return page_detail_with_measure_error(state, id, &e, fields);
-    }
-
-    if kind == "bought" {
-        // A fresh "bought" entry replaces any existing one: a purchase is a
-        // single fact about a battery, not a log of repeated events.
-        for m in db.measurements(id).unwrap_or_default() {
-            if m.kind == "bought" {
-                let _ = db.delete_measurement(m.id);
-            }
-        }
+        return retry_measure(state, id, &e, fields);
     }
 
     match db.add_measurement(id, kind, measured_at, capacity_mah, ir_mohm, instrument_id, mode_id, discharge_ma, charge_ma, notes) {
@@ -940,42 +961,13 @@ fn submit_measure(state: &AppState, id: &str, fields: &HashMap<String, String>) 
         }
         _ => {
             drop(db);
-            page_detail_with_measure_error(state, id, "That battery no longer exists.", fields)
+            retry_measure(state, id, "That battery no longer exists.", fields)
         }
     }
 }
 
-fn page_detail_with_measure_error(state: &AppState, id: i64, error: &str, fields: &HashMap<String, String>) -> CommandResult {
-    let db = state.db.lock().unwrap();
-    let battery = match db.get(id).unwrap_or(None) {
-        Some(b) => b,
-        None => return page(state, "missing.html", json!({"battery_id": id}), &format!("Battery {id}"), "", "", ""),
-    };
-    let (prev, next) = db.adjacent_ids(id).unwrap_or((None, None));
-    let measurements = db.measurements(id).unwrap_or_default();
-    let history = db.history(id).unwrap_or_default();
-    let limits = view::ir_limits(&db);
-    let health_limit = Some(config::get(&db, "health_limit_pct").as_i64());
-    let names = view::instrument_names(&db);
-    let modes = view::mode_names(&db);
-    let condition = view::condition_view(&battery, &measurements, &limits, health_limit, &names);
-    let readings: Vec<Value> = measurements.iter().map(|m| view::reading_row(m, &names, &modes)).collect();
-    let instruments: Vec<Value> = db.list_instruments().unwrap_or_default().iter().filter(|i| !i.modes.is_empty()).map(view::instrument_with_modes).collect();
-    let types = db.distinct("type").unwrap_or_default();
-    let brands = db.distinct("brand").unwrap_or_default();
-    let locations = db.distinct("location").unwrap_or_default();
-    let top_locations = db.popular("location", 8).unwrap_or_default();
-
-    let ctx = json!({
-        "battery": battery, "adjacent": {"prev": prev, "next": next}, "tab": "",
-        "condition": condition, "history": history, "readings": readings,
-        "instruments": instruments, "kinds": batteries_core::db::KINDS, "today": today(),
-        "types": types, "brands": brands, "locations": locations, "top_locations": top_locations,
-        "measure_error": error,
-        "measure": fields_to_value(fields),
-    });
-    let title = format!("Battery {id:03}");
-    page(state, "detail.html", ctx, &title, "", "", "measure")
+fn retry_measure(state: &AppState, id: i64, error: &str, fields: &HashMap<String, String>) -> CommandResult {
+    page_detail(state, id, &HashMap::new(), "", "", Some((error, fields)))
 }
 
 fn submit_print_one(state: &AppState, id: &str, _fields: &HashMap<String, String>) -> CommandResult {
@@ -1195,7 +1187,10 @@ fn submit_batch_measure(state: &AppState, fields: &HashMap<String, String>) -> C
     let instrument_id = whole_number(get_str(fields, "instrument_id"));
     let mode_id = whole_number(get_str(fields, "mode_id"));
 
-    let mut saved = 0;
+    // Every row is validated before any is saved: saving as it went meant a
+    // bad row 5 left rows 1-4 already recorded, and resubmitting after
+    // fixing row 5 recorded them a second time.
+    let mut rows = Vec::new();
     let mut missing: Vec<String> = Vec::new();
     let max_row = if kind == "bought" { 10 } else { 16 };
     for i in 1..=max_row {
@@ -1242,11 +1237,29 @@ fn submit_batch_measure(state: &AppState, fields: &HashMap<String, String>) -> C
                 })),
             );
         }
-        let _ = db.add_measurement(battery_id, kind, measured_at, capacity_mah, ir_mohm, instrument_id, mode_id, discharge_ma, charge_ma, notes);
-        saved += 1;
+        rows.push((battery_id, capacity_mah, ir_mohm, discharge_ma, charge_ma, notes));
     }
 
+    let saved: DbResult<usize> = db.atomically(|| {
+        for &(battery_id, capacity_mah, ir_mohm, discharge_ma, charge_ma, notes) in &rows {
+            db.add_measurement(battery_id, kind, measured_at, capacity_mah, ir_mohm, instrument_id, mode_id, discharge_ma, charge_ma, notes)?;
+        }
+        Ok(rows.len())
+    });
     drop(db);
+    let saved = match saved {
+        Ok(n) => n,
+        Err(e) => {
+            return page_batch_measure(
+                state, "", &format!("Nothing was saved: {e}"),
+                Some(json!({
+                    "common": fields_to_value(fields),
+                    "slot_rows": batch_rows_from_fields(fields, 16, false),
+                    "bought_rows": batch_rows_from_fields(fields, 10, true),
+                })),
+            );
+        }
+    };
     if saved == 0 && missing.is_empty() {
         page_batch_measure(state, "", "No battery ids were given.", None)
     } else if saved == 0 {
@@ -1357,7 +1370,10 @@ fn submit_match(state: &AppState, fields: &HashMap<String, String>) -> CommandRe
     };
 
     if confirm {
-        let _ = db.create_match(&location, &requested_type, draw.as_str(), &suggestion.battery_ids);
+        if let Err(e) = db.create_match(&location, &requested_type, draw.as_str(), &suggestion.battery_ids) {
+            drop(db);
+            return page_match(state, "", &format!("Could not save the match: {e}"), Some(echo));
+        }
         drop(db);
         let n = suggestion.battery_ids.len();
         return redirect(

@@ -111,6 +111,7 @@ pub fn run() {
             commands::render_page,
             commands::submit_form,
             commands::confirm_dialog,
+            commands::error_dialog,
             commands::app_version,
             commands::resolve_code,
             commands::restore_battery_api,
